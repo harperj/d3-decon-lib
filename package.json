@@ -19,5 +19,9 @@
   "bugs": {
     "url": "https://github.com/harperj/deconstructor/issues"
   },
-  "homepage": "https://github.com/harperj/deconstructor"
+  "homepage": "https://github.com/harperj/deconstructor",
+  "devDependencies": {
+    "jquery": "^2.1.1",
+    "underscore": "^1.7.0"
+  }
 }
