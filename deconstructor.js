@@ -1,6 +1,6 @@
 var _ = require('underscore');
 var $ = require('jquery');
-var sylvester   = require('../lib/sylvester.js');
+var sylvester   = require('./sylvester.js');
 
 function deconstruct(svgNode) {
     var dataNodes = extractData(svgNode);
