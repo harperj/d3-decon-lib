@@ -1,0 +1,23 @@
+{
+  "name": "d3deconstructor",
+  "version": "0.0.1",
+  "description": "Tool for extracting data, marks, and the mappings between them from a D3 visualization.",
+  "main": "deconstructor.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harperj/deconstructor.git"
+  },
+  "keywords": [
+    "d3",
+    "visualization"
+  ],
+  "author": "Jonathan Harper",
+  "license": "BSD",
+  "bugs": {
+    "url": "https://github.com/harperj/deconstructor/issues"
+  },
+  "homepage": "https://github.com/harperj/deconstructor"
+}
