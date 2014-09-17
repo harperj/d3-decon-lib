@@ -201,8 +201,8 @@ var VisDeconstruct = (function() {
                         xMatData.push(row);
                     }
                     //console.log(xMatData);
-                    var xMatrix = sylvester.$M(xMatData);
-                    var yVector = sylvester.$V(schema.attrs[attr]);
+                    var xMatrix = $M(xMatData);
+                    var yVector = $V(schema.attrs[attr]);
                     var coeffs = findCoefficients(xMatrix, yVector);
                     var err = 0;
                     if (coeffs) {
