@@ -2,6 +2,39 @@ var $ = require('jQuery');
 var _ = require('underscore');
 var sylvester = require('./sylvester-node.js');
 
+function pageDeconstruct() {
+    var svgNodes = $('svg');
+    var deconstructed = [];
+    var nodes = [];
+    var ids = [];
+
+    $.each(svgNodes, function (i, svgNode) {
+        var children = $(svgNode).find('*');
+        var isD3Node = false;
+        $.each(children, function (i, child) {
+            if (child.__data__) {
+                isD3Node = true;
+                return false;
+            }
+        });
+
+        if (isD3Node) {
+            var decon = deconstruct(svgNode);
+            nodes = nodes.concat(decon.dataNodes.nodes);
+            ids = ids.concat(decon.dataNodes.ids);
+            //updaters.push(new VisUpdater(svgNode, decon.dataNodes.nodes, decon.dataNodes.ids,
+            //    decon.schematizedData));
+            var deconData = {
+                schematized: decon.schematizedData,
+                ids: decon.dataNodes.ids
+            };
+            deconstructed.push(deconData);
+        }
+    });
+
+    return deconstructed;
+}
+
 function deconstruct(svgNode) {
     var dataNodes = extractData(svgNode);
     var nodeInfo = {};
@@ -772,6 +805,7 @@ function createNodes(nodeIds) {
 }
 
 module.exports = {
+    pageDeconstruct: pageDeconstruct,
     deconstruct: deconstruct,
     extractNodeAttrs: extractNodeAttrs,
     extractMappings: extractMappings,
