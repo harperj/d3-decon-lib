@@ -1,0 +1,23 @@
+{
+  "name": "d3deconstructor",
+  "version": "0.0.0",
+  "description": "deconstructor =============",
+  "main": "deconstructor.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harperj/d3deconstructor.git"
+  },
+  "author": "Jonathan Harper",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/harperj/d3deconstructor/issues"
+  },
+  "homepage": "https://github.com/harperj/d3deconstructor",
+  "devDependencies": {
+    "grunt": "^0.4.5",
+    "grunt-contrib-concat": "^0.5.0"
+  }
+}
