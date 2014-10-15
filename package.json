@@ -1,6 +1,6 @@
 {
   "name": "d3deconstructor",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "deconstructor =============",
   "main": "deconstructor.js",
   "scripts": {
