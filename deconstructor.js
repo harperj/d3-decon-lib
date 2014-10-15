@@ -567,6 +567,27 @@ function schematize (data, ids, nodeInfo) {
     return dataSchemas;
 }
 
+
+function flattenObject(ob) {
+    var toReturn = {};
+
+    for (var i in ob) {
+        if (!ob.hasOwnProperty(i)) continue;
+
+        if ((typeof ob[i]) == 'object') {
+            var flatObject = flattenObject(ob[i]);
+            for (var x in flatObject) {
+                if (!flatObject.hasOwnProperty(x)) continue;
+
+                toReturn[i + '.' + x] = flatObject[x];
+            }
+        } else {
+            toReturn[i] = ob[i];
+        }
+    }
+    return toReturn;
+};
+
 /**
  * Given a root SVG element, returns all of the mark generating SVG nodes bound to data,
  * the data they are bound to, and their order in the DOM traversal ('id').
@@ -590,6 +611,8 @@ function extractData(svgNode) {
             var nodeData = node.__data__;
             if (typeof nodeData === "object") {
                 nodeData = $.extend({}, node.__data__);
+                nodeData = flattenObject(nodeData);
+
             }
             else if (typeof nodeData === "number") {
                 nodeData = {number: node.__data__};
