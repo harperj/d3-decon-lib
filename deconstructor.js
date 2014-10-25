@@ -42,10 +42,8 @@ function deconstruct(svgNode) {
     nodeInfo.nodeAttrs = extractNodeAttrs(dataNodes.nodes);
     nodeInfo.nodes = dataNodes.nodes;
     var schematizedData = schematize(dataNodes.data, dataNodes.ids, nodeInfo);
-    console.log(schematizedData);
     _.each(schematizedData, function(schema, i) {
         schematizedData[i].mappings = extractMappings(schema);
-        //console.log(schematizedData[i].mappings);
     });
 
     return {
@@ -235,7 +233,6 @@ function extractMultiLinearMappings(schema) {
                     }
                     xMatData.push(row);
                 }
-                //console.log(xMatData);
                 var xMatrix = sylvester.$M(xMatData);
                 var yVector = sylvester.$V(schema.attrs[attr]);
                 var coeffs = findCoefficients(xMatrix, yVector);
@@ -250,8 +247,6 @@ function extractMultiLinearMappings(schema) {
                     _.each(fieldSet, function(field, fieldInd) {
                         attrMin += _.min(schema.data[field]) * coeffs[fieldInd+1];
                     });
-                    //console.log("Attr Min:");
-                    //console.log(attrMin);
                     var mapping;
                     mapping = {
                         type: 'linear',
@@ -273,7 +268,6 @@ function extractMultiLinearMappings(schema) {
             }
         }
     });
-    //console.log(allLinearMappings);
     return allLinearMappings;
 }
 
@@ -523,6 +517,10 @@ function schematize (data, ids, nodeInfo) {
             continue;
         }
 
+
+//        if (typeof data[i] === "object") {
+//            data[i] = flattenObject(data[i]);
+//        }
         var currSchema = _.keys(data[i]);
 
         var foundSchema = false;
@@ -567,27 +565,6 @@ function schematize (data, ids, nodeInfo) {
     return dataSchemas;
 }
 
-
-function flattenObject(ob) {
-    var toReturn = {};
-
-    for (var i in ob) {
-        if (!ob.hasOwnProperty(i)) continue;
-
-        if ((typeof ob[i]) == 'object') {
-            var flatObject = flattenObject(ob[i]);
-            for (var x in flatObject) {
-                if (!flatObject.hasOwnProperty(x)) continue;
-
-                toReturn[i + '.' + x] = flatObject[x];
-            }
-        } else {
-            toReturn[i] = ob[i];
-        }
-    }
-    return toReturn;
-};
-
 /**
  * Given a root SVG element, returns all of the mark generating SVG nodes bound to data,
  * the data they are bound to, and their order in the DOM traversal ('id').
@@ -611,7 +588,6 @@ function extractData(svgNode) {
             var nodeData = node.__data__;
             if (typeof nodeData === "object") {
                 nodeData = $.extend({}, node.__data__);
-                nodeData = flattenObject(nodeData);
 
             }
             else if (typeof nodeData === "number") {
@@ -753,6 +729,7 @@ function extractStyle (domNode) {
         styleObject[prop] = style.getPropertyValue(prop);
     }
 
+    // A little hack since SVG's default is to scale the stroke-width
     styleObject["vector-effect"] = "non-scaling-stroke";
 
     var filterAttrs = [
@@ -810,22 +787,6 @@ var transformedBoundingBox = function (el, to) {
     bb.height = yMax - yMin;
     return bb;
 };
-
-function createNodes(nodeIds) {
-    var createdNodes = [];
-
-    _.each(nodeIds, function(nodeId) {
-        ids.push(nodeId);
-        var thisNode = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        d3.select(thisNode).attr("r", 1);
-        svgNode[0].appendChild(thisNode);
-        markNodes.push(thisNode);
-        createdNodes.push(thisNode);
-    });
-
-    var visAttrs = VisDeconstruct.extractVisAttrs(createdNodes);
-    console.log(visAttrs);
-}
 
 module.exports = {
     pageDeconstruct: pageDeconstruct,
