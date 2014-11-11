@@ -37,6 +37,7 @@ function deconstruct(svgNode) {
     });
 
     return {
+        svgNode: svgNode,
         dataNodes: dataNodes,
         schematizedData: schematizedData
     };
