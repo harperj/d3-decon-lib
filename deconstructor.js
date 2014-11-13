@@ -579,7 +579,6 @@ function extractData(svgNode) {
             var nodeData = node.__data__;
             if (typeof nodeData === "object") {
                 nodeData = $.extend({}, node.__data__);
-
             }
             else if (typeof nodeData === "number") {
                 nodeData = {number: node.__data__};
@@ -652,6 +651,10 @@ function fixTypes (objArray) {
 
         for (property in object) {
             if (object.hasOwnProperty(property)) {
+                if (property instanceof Date) {
+                    property = property.toString();
+                }
+
                 rgbChannels = rgbRegex.exec(object[property]);
                 // If this is our first pass, set it to whatever we see
                 if (!fieldType.hasOwnProperty(property)) {
