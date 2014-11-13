@@ -651,8 +651,8 @@ function fixTypes (objArray) {
 
         for (property in object) {
             if (object.hasOwnProperty(property)) {
-                if (property instanceof Date) {
-                    property = property.toString();
+                if (object[property] instanceof Date) {
+                    object[property] = object[property].toString();
                 }
 
                 rgbChannels = rgbRegex.exec(object[property]);
