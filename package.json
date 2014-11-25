@@ -8,14 +8,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/harperj/d3deconstructor.git"
+    "url": "https://github.com/harperj/d3-decon-lib.git"
   },
   "author": "Jonathan Harper",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/harperj/d3deconstructor/issues"
+    "url": "https://github.com/harperj/d3-decon-lib/issues"
   },
-  "homepage": "https://github.com/harperj/d3deconstructor",
+  "homepage": "https://github.com/harperj/d3-decon-lib",
   "devDependencies": {
     "jquery": "^2.1.1",
     "underscore": "^1.7.0"
