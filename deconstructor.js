@@ -523,6 +523,14 @@ function schematize (data, ids, nodeInfo) {
                 dataSchemas[j].ids.push(ids[i]);
                 dataSchemas[j].nodeAttrs.push(nodeAttrs[i]);
 
+                // Not using _.each for this because there could be "length" data which
+                // would break underscore's ducktyping
+                for (var dataAttr in data[i]) {
+                    if (data[i].hasOwnProperty(dataAttr)) {
+                        dataSchemas[j].data[dataAttr].push(data[i][dataAttr]);
+                    }
+                }
+
                 _.each(data[i], function(val, attr) {
                     dataSchemas[j].data[attr].push(val);
                 });
