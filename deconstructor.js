@@ -542,9 +542,15 @@ function schematize (data, ids, nodeInfo) {
                 attrs: {},
                 nodeAttrs: [nodeAttrs[i]]
             };
-            _.each(data[i], function(val, attr) {
-                newSchema.data[attr] = [val];
-            });
+
+            // Not using _.each for this because there could be "length" data which
+            // would break underscore's ducktyping
+            for (var dataAttr in data[i]) {
+                if (data[i].hasOwnProperty(dataAttr)) {
+                    newSchema.data[dataAttr] = [data[i][dataAttr]];
+                }
+            }
+
             _.each(attrs[i], function(val, attr) {
                 newSchema.attrs[attr] = [val];
             });
