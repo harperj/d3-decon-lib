@@ -531,9 +531,6 @@ function schematize (data, ids, nodeInfo) {
                     }
                 }
 
-                _.each(data[i], function(val, attr) {
-                    dataSchemas[j].data[attr].push(val);
-                });
                 _.each(attrs[i], function(val, attr) {
                     dataSchemas[j].attrs[attr].push(val);
                 });
