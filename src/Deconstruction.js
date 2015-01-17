@@ -1,4 +1,5 @@
 var _ = require('underscore');
+var Schema = require('./Schema');
 
 var Deconstruction = function(svg, schemas) {
     var schemaData = [];
