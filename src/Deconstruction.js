@@ -1,5 +1,5 @@
 var _ = require('underscore');
-var markGroup = require('./MarkGroup');
+var MarkGroup = require('./MarkGroup');
 
 var Deconstruction = function(svg, schemas) {
     var schemaData = [];
