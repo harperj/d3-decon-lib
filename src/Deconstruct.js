@@ -1,6 +1,6 @@
 var $ = require('jQuery');
 var _ = require('underscore');
-var sylvester = require('./sylvester-node.js');
+var sylvester = require('../lib/sylvester-node.js');
 
 function pageDeconstruct() {
     var svgNodes = $('svg');
