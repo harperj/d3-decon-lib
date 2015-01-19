@@ -211,7 +211,7 @@ function extractMultiLinearMappings(schema) {
     var allLinearMappings = [];
 
     _.each(numberAttrs, function(attr) {
-        for (var i = 1; i <= numberFields.length; ++i) {
+        for (var i = 1; i <= 3; ++i) {
             var combinations = k_combinations(numberFields, i);
             var mappings = [];
             _.each(combinations, function(fieldSet) {
