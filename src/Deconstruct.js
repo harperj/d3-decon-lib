@@ -419,7 +419,14 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
         var lineCount = 0;
 
         for (var j = 0; j < dataArray.length; ++j) {
-            var dataRow = _.extend({}, dataArray[j]);
+            var dataRow = {};
+            if (dataArray[0] instanceof Object) {
+                dataRow = _.extend(dataRow, dataArray[j]);
+            }
+            else {
+                var dataType = typeof dataRow[0];
+                dataRow = {dataType: dataArray[j]};
+            }
             dataRow = _.extend(dataRow, otherAttrs);
             dataRow['lineID'] = lineCount;
             lineCount++;
