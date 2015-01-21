@@ -385,22 +385,27 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
 
     var segs = node.animatedPathSegList;
     if (segs.length === 0) {
-        return 0;
+        return undefined;
     }
     if (segs[0].pathSegType !== 2) {
-        return 0;
+        return undefined;
     }
-    var lineLength = 1;
-    for (var i = 1; i < segs.length; ++i) {
-        /*
-         if (segs[i].pathSegType !== 4) {
 
-         return null;
-         }
-         */
-        //else {
+    var lineLength = 1;
+    var linePointPositions = [];
+    var currX, currY;
+    for (var i = 1; i < segs.length; ++i) {
+        var seg = segs[i];
+        currX = seg.x;
+        currY = seg.y;
+
+        var transformedPt = transformedPoint(currX, currY, node);
+        linePointPositions.push({
+            x: transformedPt.x,
+            y: transformedPt.y
+        });
+
         lineLength++;
-        //}
     }
 
     if (dataArray && dataArray.length === lineLength) {
@@ -432,6 +437,8 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
             lineCount++;
             lineData[j] = dataRow;
             lineAttrs[j] = attrs;
+            lineAttrs[j].xPosition = linePointPositions[j].x;
+            lineAttrs[j].yPosition = linePointPositions[j].y;
             lineIDs.push(id);
             lineNodeAttrs.push(nodeAttrs);
         }
@@ -780,6 +787,20 @@ var transformedBoundingBox = function (el, to) {
     bb.y = yMin;
     bb.height = yMax - yMin;
     return bb;
+};
+
+var transformedPoint = function(ptX, ptY, ptBaseElem, ptTargetElem) {
+    var bb = ptBaseElem.getBBox();
+    var svg = ptBaseElem.ownerSVGElement;
+    if (!ptTargetElem) {
+        ptTargetElem = svg;
+    }
+
+    var m = ptBaseElem.getTransformToElement(ptTargetElem);
+    var transformedPt = svg.createSVGPoint();
+    transformedPt.x = ptX;
+    transformedPt.y = ptY;
+    return pt.matrixTransform(m);
 };
 
 module.exports = {
