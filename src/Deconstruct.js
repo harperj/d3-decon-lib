@@ -2,7 +2,7 @@ var $ = require('jQuery');
 var _ = require('underscore');
 var sylvester = require('../lib/sylvester-node.js');
 
-function pageDeconstruct() {
+var pageDeconstruct = function() {
     var svgNodes = $('svg');
     var deconstructed = [];
 
@@ -23,9 +23,9 @@ function pageDeconstruct() {
     });
 
     return deconstructed;
-}
+};
 
-function deconstruct(svgNode) {
+var deconstruct = function(svgNode) {
     var dataNodes = extractData(svgNode);
     var nodeInfo = {};
     nodeInfo.attrData = extractVisAttrs(dataNodes.nodes);
@@ -41,9 +41,9 @@ function deconstruct(svgNode) {
         dataNodes: dataNodes,
         schematizedData: schematizedData
     };
-}
+};
 
-function extractNodeAttrs(nodes) {
+var extractNodeAttrs = function(nodes) {
     var nodeAttrs = [];
     _.each(nodes, function(node) {
         var attrData = {};
@@ -55,7 +55,7 @@ function extractNodeAttrs(nodes) {
         nodeAttrs.push(attrData);
     });
     return nodeAttrs;
-}
+};
 
 function extractMappings(schema) {
     var allMappings = extractNominalMappings(schema).concat(extractMultiLinearMappings(schema));
@@ -161,38 +161,6 @@ function filterExtraNominalMappings (schemaMappings) {
     return schemaMappings;
 }
 
-
-/**
- * Given a data array and attribute array, finds a linear mapping between them if it exists.
- * @param dataArray
- * @param attrArray
- * @returns {}
- */
-function extractLinearMapping(dataArray, attrArray) {
-    var zippedData = _.zip(dataArray, attrArray);
-    if (ss.standard_deviation(dataArray) === 0 || ss.standard_deviation(attrArray) === 0) {
-        return false;
-    }
-
-    var linearRegression = ss.linear_regression().data(zippedData);
-    var linearRegressionLine = linearRegression.line();
-    var rSquared = ss.r_squared(zippedData, linearRegressionLine);
-    if (rSquared > 0.98 && !isNaN(rSquared)) {
-        var mapping = {
-            type: 'linear'
-        };
-        var dataMin = _.min(dataArray);
-        var dataMax = _.max(dataArray);
-        mapping.params = {
-            dataMin: dataMin,
-            attrMin: linearRegressionLine(dataMin),
-            dataMax: dataMax,
-            attrMax: linearRegressionLine(dataMax)
-        };
-        return mapping;
-    }
-    return false;
-}
 
 function extractMultiLinearMappings(schema) {
     var numberFields = [];
@@ -437,7 +405,12 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
 
     if (dataArray && dataArray.length === lineLength) {
         var schema = [];
-        schema = schema.concat(_.keys(dataArray[0]));
+        if (dataArray[0] instanceof Object) {
+            schema = schema.concat(_.keys(dataArray[0]));
+        }
+        else {
+            schema = schema.concat(typeof dataArray[0]);
+        }
         schema = schema.concat(_.keys(otherAttrs));
         var lineData = [];
         var lineAttrs = [];
@@ -548,8 +521,6 @@ function schematize (data, ids, nodeInfo) {
                 nodeAttrs: [nodeAttrs[i]]
             };
 
-            // Not using _.each for this because there could be "length" data which
-            // would break underscore's ducktyping
             for (var dataAttr in data[i]) {
                 if (data[i].hasOwnProperty(dataAttr)) {
                     newSchema.data[dataAttr] = [data[i][dataAttr]];
@@ -578,35 +549,46 @@ function extractData(svgNode) {
     var data = [];
     var nodes = [];
     var ids = [];
-    var lineCount = 0;
+    var nonBound = [];
 
     /** List of tag names which generate marks in SVG and are accepted by our system. **/
     var markGeneratingTags = ["circle", "ellipse", "rect", "path", "polygon", "text", "line"];
 
     for (var i = 0; i < svgChildren.length; ++i) {
         var node = svgChildren[i];
-        if (node.__data__ !== undefined
-            && _.contains(markGeneratingTags, node.tagName.toLowerCase())) {
+        var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
+
+        if (isMarkGenerating) {
             var nodeData = node.__data__;
-            if (typeof nodeData === "object") {
-                nodeData = $.extend({}, node.__data__);
-            }
-            else if (typeof nodeData === "number") {
-                nodeData = {number: node.__data__};
+            if (nodeData !== undefined) {
+                if (typeof nodeData === "object") {
+                    nodeData = $.extend({}, node.__data__);
+                }
+                else if (typeof nodeData === "number") {
+                    nodeData = {number: node.__data__};
+                }
+                else {
+                    nodeData = {string: node.__data__};
+                }
+
+                nodeData.deconID = i;
+                data.push(nodeData);
+                nodes.push(node);
+                ids.push(i);
             }
             else {
-                nodeData = {string: node.__data__};
+                nonBound.push(node);
             }
-
-            nodeData.deconID = i;
-            data.push(nodeData);
-            nodes.push(node);
-            ids.push(i);
         }
     }
 
     data = fixTypes(data);
-    return {data: data, nodes: nodes, ids: ids};
+    return {
+        data: data,
+        nodes: nodes,
+        ids: ids,
+        nonBound: nonBound
+    };
 }
 
 

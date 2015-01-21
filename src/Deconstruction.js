@@ -1,28 +1,29 @@
 var _ = require('underscore');
 var MarkGroup = require('./MarkGroup');
 
-var Deconstruction = function(svg, schemas) {
-    var schemaData = [];
-    schemas.forEach(function(schema) {
-        schemaData.push(MarkGroup.fromJSON(schema));
+var Deconstruction = function(svg, groups, unbound) {
+    var groupData = [];
+    groups.forEach(function(group) {
+        groupData.push(MarkGroup.fromJSON(group));
     });
 
-    this.schemaData = schemaData;
+    this.groups = groupData;
     this.svg = svg;
+    this.unbound = unbound;
 };
 
 Deconstruction.fromJSON = function(json) {
-    return new Deconstruction(json.svg, json.marks);
+    return new Deconstruction(json.svg, json.groups, json.unbound);
 };
 
-Deconstruction.prototype.getSchemaByName = function(name) {
-    var foundSchema = null;
-    _.each(this.schemaData, function(schema) {
-        if(schema.name === name) {
-            foundSchema = schema;
+Deconstruction.prototype.getGroupByName = function(name) {
+    var foundGroup = null;
+    _.each(this.groups, function(group) {
+        if(group.name === name) {
+            foundGroup = group;
         }
     });
-    return foundSchema;
+    return foundGroup;
 };
 
 module.exports = Deconstruction;
