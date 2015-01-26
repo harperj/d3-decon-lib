@@ -26,21 +26,182 @@ var pageDeconstruct = function() {
 };
 
 var deconstruct = function(svgNode) {
-    var dataNodes = extractData(svgNode);
-    var nodeInfo = {};
-    nodeInfo.attrData = extractVisAttrs(dataNodes.nodes);
-    nodeInfo.nodeAttrs = extractNodeAttrs(dataNodes.nodes);
-    nodeInfo.nodes = dataNodes.nodes;
-    var schematizedData = schematize(dataNodes.data, dataNodes.ids, nodeInfo);
-    _.each(schematizedData, function(schema, i) {
-        schematizedData[i].mappings = extractMappings(schema);
+    var marks = extractMarkData(svgNode);
+    var lineExpandedMarks = expandLines(marks);
+
+    lineExpandedMarks.forEach(function(mark) {
+        if (mark.data !== undefined) {
+            mark.data.deconID = mark.deconID;
+        }
+        if (mark.lineID !== undefined) {
+            mark.data.lineID = mark.lineID;
+        }
     });
 
+    var grouped = groupMarks(lineExpandedMarks);
+
     return {
-        svgNode: svgNode,
-        dataNodes: dataNodes,
-        schematizedData: schematizedData
+        groups: grouped,
+        marks: marks
+    }
+};
+
+var groupMarks = function(marks) {
+    var dataSchemas = [];
+    marks.forEach(function(mark) {
+        var currSchema = _.keys(mark.data);
+
+        var foundSchema = false;
+        for (var j = 0; j < dataSchemas.length; ++j) {
+            if (_.intersection(currSchema, dataSchemas[j].schema).length == currSchema.length
+                && dataSchemas[j].nodeType === mark.attrs['shape']) {
+                foundSchema = true;
+                dataSchemas[j].ids.push(mark.deconID);
+                dataSchemas[j].nodeAttrs.push(mark.nodeAttrs);
+
+                // Not using _.each for this because there could be "length" data which
+                // would break underscore's ducktyping
+                for (var dataAttr in mark.data) {
+                    if (mark.data.hasOwnProperty(dataAttr)) {
+                        dataSchemas[j].data[dataAttr].push(mark.data[dataAttr]);
+                    }
+                }
+
+                _.each(mark.attrs, function (val, attr) {
+                    dataSchemas[j].attrs[attr].push(val);
+                });
+                break;
+            }
+        }
+
+        if (!foundSchema) {
+            var newSchema = {
+                schema: currSchema,
+                nodeType: mark.attrs['shape'],
+                ids: [mark.deconID],
+                data: {},
+                attrs: {},
+                nodeAttrs: [mark.nodeAttrs]
+            };
+
+            for (var dataAttr in mark.data) {
+                if (mark.data.hasOwnProperty(dataAttr)) {
+                    newSchema.data[dataAttr] = [mark.data[dataAttr]];
+                }
+            }
+
+            _.each(mark.attrs, function (val, attr) {
+                newSchema.attrs[attr] = [val];
+            });
+
+            dataSchemas.push(newSchema);
+        }
+    });
+
+    return dataSchemas;
+};
+
+var expandLines = function(marks) {
+    for (var i = 0; i < marks.length; ++i) {
+        var mark = marks[i];
+        var lineData = getLineData(mark);
+
+        if (lineData !== undefined) {
+            marks.splice(i, 1);
+            var newMarks = getLinePoints(mark, lineData);
+            Array.prototype.push.apply(marks, newMarks);
+        }
+    }
+    return marks;
+};
+
+var getLinePoints = function(mark, lineData) {
+    var linePointPositions = getLinePointPositions(mark);
+    var linePoints = [];
+
+    lineData.array.forEach(function(arrayItem, j) {
+        var ptData = {};
+
+        if (typeof arrayItem === "object") {
+            ptData = _.extend(ptData, arrayItem);
+        }
+        else {
+            var type = typeof arrayItem;
+            ptData[type] = arrayItem;
+        }
+        _.extend(ptData, lineData.other);
+
+        var newMarkAttrs = _.extend({}, mark.attrs);
+        newMarkAttrs['xPosition'] = linePointPositions[j].x;
+        newMarkAttrs['yPosition'] = linePointPositions[j].y;
+        newMarkAttrs['shape'] = 'linePoint';
+
+        var newMark = {
+            data: ptData,
+            attrs: newMarkAttrs,
+            nodeAttrs: mark.nodeAttrs,
+            lineID: j,
+            deconID: mark.deconID
+        };
+        linePoints.push(newMark);
+    });
+
+    return linePoints;
+};
+
+var getLinePointPositions = function(mark) {
+    var segs = mark.node.animatedPathSegList;
+    var currX;
+    var currY;
+    var linePointPositions = [];
+    for (var i = 0; i < segs.length; ++i) {
+        var seg = segs[i];
+        if (seg.x !== undefined)
+            currX = seg.x;
+        if (seg.y !== undefined)
+            currY = seg.y;
+
+        var transformedPt = transformedPoint(currX, currY, mark.node);
+        linePointPositions.push({
+            x: transformedPt.x,
+            y: transformedPt.y
+        });
+    }
+    return linePointPositions;
+};
+
+var getLineData = function(mark) {
+    var validLineArray = function(mark, dataArray) {
+        return mark.node.animatedPathSegList.length === dataArray.length;
     };
+
+    if (mark.attrs['shape'] === 'path') {
+        var dataArray;
+        var otherData = {};
+
+        if (mark.data instanceof Array && validLineArray(mark, mark.data)) {
+            dataArray = mark.data;
+        }
+        else if (mark.data instanceof Object) {
+            for (var attr in mark.data) {
+                if (mark.data[attr] instanceof Array && validLineArray(mark, mark.data[attr])) {
+                    dataArray = mark.data[attr];
+                }
+                else {
+                    otherData[attr] = mark.data[attr];
+                }
+            }
+        }
+
+        if (dataArray !== undefined) {
+            return {
+                array: dataArray,
+                other: otherData
+            };
+        }
+    }
+
+    return undefined;
 };
 
 var extractNodeAttrs = function(nodes) {
@@ -391,13 +552,15 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
         return undefined;
     }
 
-    var lineLength = 1;
+    var lineLength = 0;
     var linePointPositions = [];
     var currX, currY;
-    for (var i = 1; i < segs.length; ++i) {
+    for (var i = 0; i < segs.length; ++i) {
         var seg = segs[i];
-        currX = seg.x;
-        currY = seg.y;
+        if (seg.x !== undefined)
+            currX = seg.x;
+        if (seg.y !== undefined)
+            currY = seg.y;
 
         var transformedPt = transformedPoint(currX, currY, node);
         linePointPositions.push({
@@ -553,17 +716,14 @@ function schematize (data, ids, nodeInfo) {
 }
 
 /**
- * Given a root SVG element, returns all of the mark generating SVG nodes bound to data,
- * the data they are bound to, and their order in the DOM traversal ('id').
+ * Given a root SVG element, returns all of the mark generating SVG nodes
+ * and their order in the DOM traversal ('id').
  * @param svgNode
- * @returns {{data: Array, nodes: Array, ids: Array}}
+ * @returns Array
  */
-function extractData(svgNode) {
+var extractMarkData = function(svgNode) {
     var svgChildren = $(svgNode).find('*');
-    var data = [];
-    var nodes = [];
-    var ids = [];
-    var nonBound = [];
+    var marks = [];
 
     /** List of tag names which generate marks in SVG and are accepted by our system. **/
     var markGeneratingTags = ["circle", "ellipse", "rect", "path", "polygon", "text", "line"];
@@ -573,38 +733,61 @@ function extractData(svgNode) {
         var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
 
         if (isMarkGenerating) {
-            var nodeData = node.__data__;
-            if (nodeData !== undefined) {
-                if (typeof nodeData === "object") {
-                    nodeData = $.extend({}, node.__data__);
-                }
-                else if (typeof nodeData === "number") {
-                    nodeData = {number: node.__data__};
-                }
-                else {
-                    nodeData = {string: node.__data__};
-                }
+            var mark = {
+                deconID: i,
+                node: node,
+                attrs: extractAttrsFromMark(node),
+                nodeAttrs: extractNodeAttrsFromMark(node)
+            };
 
-                nodeData.deconID = i;
-                data.push(nodeData);
-                nodes.push(node);
-                ids.push(i);
+            // Extract data for marks that have data bound
+            var markData = extractDataFromMark(node);
+            if (markData !== undefined) {
+                mark.data = markData;
             }
-            else {
-                nonBound.push(node);
-            }
+
+            marks.push(mark);
         }
     }
 
-    data = fixTypes(data);
-    return {
-        data: data,
-        nodes: nodes,
-        ids: ids,
-        nonBound: nonBound
-    };
-}
+    return marks;
+};
 
+var extractDataFromMark = function(node) {
+    var data = node.__data__;
+
+    if (data !== undefined) {
+        if (typeof data === "object") {
+            data = $.extend({}, data);
+        }
+        else if (typeof data === "number") {
+            data = {number: data};
+        }
+        else {
+            data = {string: data};
+        }
+    }
+
+    return data;
+};
+
+var extractAttrsFromMark = function(mark) {
+    var attrs = extractStyle(mark);
+    attrs.shape = mark.tagName;
+    var boundingBox = transformedBoundingBox(mark);
+
+    attrs.xPosition = boundingBox.x + (boundingBox.width / 2);
+    attrs.yPosition = boundingBox.y + (boundingBox.height / 2);
+
+    attrs.area = boundingBox.width * boundingBox.height;
+    attrs.width = boundingBox.width;
+    attrs.height = boundingBox.height;
+
+    // TODO: FIXME
+    attrs.rotation = 0;
+
+    return fixTypes([attrs])[0];
+};
 
 /**
  * Extracts the style and positional properties for each of a list of nodes, placing each node's in
@@ -635,6 +818,16 @@ function extractVisAttrs (nodes) {
     visAttrData = fixTypes(visAttrData);
     return visAttrData;
 }
+
+var extractNodeAttrsFromMark = function(markNode) {
+    var attrData = {};
+    for (var i = 0; i < markNode.attributes.length; ++i) {
+        var attr = markNode.attributes[i];
+        attrData[attr.name] = attr.value;
+    }
+    attrData.text = $(markNode).text();
+    return attrData;
+};
 
 /**
  * All style and some data attributes are extracted as strings, though some are number data or
@@ -790,7 +983,6 @@ var transformedBoundingBox = function (el, to) {
 };
 
 var transformedPoint = function(ptX, ptY, ptBaseElem, ptTargetElem) {
-    var bb = ptBaseElem.getBBox();
     var svg = ptBaseElem.ownerSVGElement;
     if (!ptTargetElem) {
         ptTargetElem = svg;
@@ -800,7 +992,7 @@ var transformedPoint = function(ptX, ptY, ptBaseElem, ptTargetElem) {
     var transformedPt = svg.createSVGPoint();
     transformedPt.x = ptX;
     transformedPt.y = ptY;
-    return pt.matrixTransform(m);
+    return transformedPt.matrixTransform(m);
 };
 
 module.exports = {
@@ -810,7 +1002,7 @@ module.exports = {
     extractMappings: extractMappings,
     extractMultiLinearMappings: extractMultiLinearMappings,
     schematize: schematize,
-    extractData: extractData,
+    extractData: extractMarkData,
     extractVisAttrs: extractVisAttrs,
     extractStyle: extractStyle
 };
