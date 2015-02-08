@@ -40,6 +40,10 @@ var deconstruct = function(svgNode) {
 
     var grouped = groupMarks(lineExpandedMarks);
 
+    grouped.forEach(function(group) {
+        group.mappings = extractMappings(group);
+    });
+
     return {
         groups: grouped,
         marks: marks
@@ -115,9 +119,37 @@ var expandLines = function(marks) {
     return marks;
 };
 
+var arrayLikeObject = function(obj) {
+    var length = 0;
+    for (var attr in obj) {
+        if (attr !== "length" && isNaN(+attr)) {
+            return undefined;
+        }
+        ++length;
+    }
+
+    var array = [];
+    for (var i = 0; i < length; ++i) {
+        if (!obj.hasOwnProperty(i)) {
+            return undefined;
+        }
+        else {
+            array.push(obj[i]);
+        }
+    }
+
+    return array;
+};
+
 var getLinePoints = function(mark, lineData) {
     var linePointPositions = getLinePointPositions(mark);
     var linePoints = [];
+
+    // If we have a basis line we should delete the irrelevant points
+    if (lineData.array.length < mark.node.animatedPathSegList.length) {
+        linePointPositions.splice(1, 1);
+        linePointPositions.splice(linePointPositions.length-2, 1);
+    }
 
     lineData.array.forEach(function(arrayItem, j) {
         var ptData = {};
@@ -172,20 +204,30 @@ var getLinePointPositions = function(mark) {
 
 var getLineData = function(mark) {
     var validLineArray = function(mark, dataArray) {
-        return mark.node.animatedPathSegList.length === dataArray.length;
+        return mark.node.animatedPathSegList.length === dataArray.length
+            || mark.node.animatedPathSegList.length === dataArray.length+2;
     };
 
     if (mark.attrs['shape'] === 'path') {
         var dataArray;
         var otherData = {};
+        var coercedArray = arrayLikeObject(mark.data);
 
         if (mark.data instanceof Array && validLineArray(mark, mark.data)) {
             dataArray = mark.data;
         }
+        else if (coercedArray && validLineArray(mark, coercedArray)) {
+            dataArray = coercedArray;
+        }
         else if (mark.data instanceof Object) {
             for (var attr in mark.data) {
+                coercedArray = arrayLikeObject(mark.data[attr]);
+
                 if (mark.data[attr] instanceof Array && validLineArray(mark, mark.data[attr])) {
                     dataArray = mark.data[attr];
+                }
+                else if (coercedArray && validLineArray(mark, coercedArray)) {
+                    dataArray = coercedArray;
                 }
                 else {
                     otherData[attr] = mark.data[attr];
@@ -749,6 +791,8 @@ var extractMarkData = function(svgNode) {
             marks.push(mark);
         }
     }
+
+    fixTypes(_.map(marks, function(mark) {return mark.data;}));
 
     return marks;
 };
