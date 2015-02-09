@@ -1,6 +1,7 @@
 var $ = require('jQuery');
 var _ = require('underscore');
 var sylvester = require('../lib/sylvester-node.js');
+var d3 = require('../lib/d3-decon-fixed.js');
 
 var pageDeconstruct = function() {
     var svgNodes = $('svg');
@@ -772,6 +773,11 @@ var extractMarkData = function(svgNode) {
 
     for (var i = 0; i < svgChildren.length; ++i) {
         var node = svgChildren[i];
+
+        if (node.__chart__) {
+            d3.svg.axis(node);
+        }
+
         var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
 
         if (isMarkGenerating) {
