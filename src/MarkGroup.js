@@ -93,6 +93,14 @@ MarkGroup.prototype.getMarkBoundingBox = function() {
         var markMinY = this.attrs["yPosition"][i] - this.attrs["height"][i] / 2;
         var markMaxX = this.attrs["xPosition"][i] + this.attrs["width"][i] / 2;
         var markMaxY = this.attrs["yPosition"][i] + this.attrs["height"][i] / 2;
+
+        if (this.data.hasOwnProperty("lineID")) {
+            markMinX = this.attrs["xPosition"][i];
+            markMinY = this.attrs["yPosition"][i];
+            markMaxX = this.attrs["xPosition"][i];
+            markMaxY = this.attrs["yPosition"][i];
+        }
+
         if (markMinX < xMin) {
             xMin = markMinX;
         }
@@ -116,7 +124,6 @@ MarkGroup.prototype.getMarkBoundingBox = function() {
 };
 
 MarkGroup.fromJSON = function(deconData) {
-
     var name = null;
     if (deconData.name) {
         name = deconData.name;
@@ -142,6 +149,41 @@ MarkGroup.prototype.getMappingForAttr = function(attr) {
         }
     }
     return null;
+};
+
+MarkGroup.prototype.getMappingsForAttr = function(attr) {
+    var mappings = [];
+    for (var i = 0; i < this.mappings.length; ++i) {
+        var mapping = this.mappings[i];
+        if (mapping.attr === attr) {
+            mappings.push(mapping);
+        }
+    }
+    if (mappings.length === 0) {
+        return undefined;
+    }
+
+    return mappings;
+};
+
+MarkGroup.prototype.getNonDerivedMappingsForAttr = function(attr) {
+    var mappings = this.getMappingsForAttr(attr);
+    _.filter(mappings, function(mapping) {
+        return !_.contains(mapping.data, "deconID") && !_.contains(mapping.data, "lineID");
+    });
+    return mappings;
+};
+
+MarkGroup.prototype.getAttrRange = function(attr) {
+    var min = _.min(this.attrs[attr]);
+    var max = _.max(this.attrs[attr]);
+    return [min, max];
+};
+
+MarkGroup.prototype.getDataRange = function(data) {
+    var min = _.min(this.data[data]);
+    var max = _.max(this.data[data]);
+    return [min, max];
 };
 
 MarkGroup.prototype.getMapping = function(data, attr) {

@@ -13,7 +13,7 @@ var Deconstruction = function(svg, groups, unbound) {
 };
 
 Deconstruction.fromJSON = function(json) {
-    return new Deconstruction(json.svg, json.groups, json.unbound);
+    return new Deconstruction(json.svg, json.marks, json.unbound);
 };
 
 Deconstruction.prototype.getGroupByName = function(name) {
@@ -24,6 +24,18 @@ Deconstruction.prototype.getGroupByName = function(name) {
         }
     });
     return foundGroup;
+};
+
+Deconstruction.prototype.getAllMappingsForAttr = function(attr) {
+    var mappings = [];
+    _.each(this.groups, function(group) {
+        var attrMaps = group.getNonDerivedMappingsForAttr(attr);
+        _.each(attrMaps, function(mapping) {
+            mapping.group = group;
+            mappings.push(mapping);
+        });
+    });
+    return mappings;
 };
 
 module.exports = Deconstruction;

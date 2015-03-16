@@ -28,6 +28,37 @@ Mapping.prototype.dataFromAttr = function(attrVal) {
     }
 };
 
+Mapping.prototype.isEqualTo = function(otherMapping) {
+    if (this.type === "linear" && otherMapping.type === "linear") {
+        if (this.params.length !== otherMapping.params.length) {
+            return false;
+        }
+
+        for (var i = 0; i < this.params.length; ++i) {
+            var thisParam = this.params[i];
+            var otherParam = otherMapping.params[i];
+            if (thisParam > otherParam + 1.5 && thisParam < otherParam - 1.5) {
+                return false;
+            }
+        }
+        return true;
+    }
+    else if(this.type === "nominal" && otherMapping.type === "nominal") {
+        for (var attr in this.params) {
+            if (otherMapping.params.hasOwnProperty(attr)) {
+                if (otherMapping.params[attr] !== this.params[attr]) {
+                    return false;
+                }
+            }
+            else {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+};
+
 Mapping.prototype.getZeroVal = function() {
     if (this.type !== "linear") {
         console.error("WRONG MAPPING TYPE");
@@ -44,6 +75,21 @@ Mapping.prototype.map = function(val) {
     }
     else {
         return this.coeffs[val];
+    }
+};
+
+Mapping.prototype.invert = function(attrVal) {
+    var dataVal;
+    if (this.type = "linear") {
+        return (attrVal - this.params.coeffs[1]) / this.params.coeffs[0];
+    }
+    else {
+        for(var dataKey in this.params) {
+            if(this.params.hasOwnProperty(dataKey) ) {
+                if( this[dataKey] === attrVal)
+                    return dataKey;
+            }
+        }
     }
 };
 

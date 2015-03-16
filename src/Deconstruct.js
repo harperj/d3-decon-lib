@@ -1,7 +1,13 @@
 var $ = require('jQuery');
 var _ = require('underscore');
+
 var sylvester = require('../lib/sylvester-node.js');
-var d3 = require('../lib/d3-decon-fixed.js');
+
+var d3;
+if (typeof document != 'undefined')
+    d3 = require('../lib/d3-decon-fixed.js');
+else
+    d3 = require('d3');
 
 var pageDeconstruct = function() {
     var svgNodes = $('svg');
@@ -55,6 +61,11 @@ var groupMarks = function(marks) {
     var dataSchemas = [];
     marks.forEach(function(mark) {
         var currSchema = _.keys(mark.data);
+
+        // If there isn't a schema, we won't group it!
+        if (_.isEqual(currSchema, [])) {
+            return;
+        }
 
         var foundSchema = false;
         for (var j = 0; j < dataSchemas.length; ++j) {
@@ -172,7 +183,7 @@ var getLinePoints = function(mark, lineData) {
         var newMark = {
             data: ptData,
             attrs: newMarkAttrs,
-            nodeAttrs: mark.nodeAttrs,
+            nodeAttrs: _.clone(mark.nodeAttrs),
             lineID: j,
             deconID: mark.deconID
         };
@@ -215,23 +226,23 @@ var getLineData = function(mark) {
         var coercedArray = arrayLikeObject(mark.data);
 
         if (mark.data instanceof Array && validLineArray(mark, mark.data)) {
-            dataArray = mark.data;
+            dataArray = _.clone(mark.data);
         }
         else if (coercedArray && validLineArray(mark, coercedArray)) {
-            dataArray = coercedArray;
+            dataArray = _.clone(coercedArray);
         }
         else if (mark.data instanceof Object) {
             for (var attr in mark.data) {
                 coercedArray = arrayLikeObject(mark.data[attr]);
 
                 if (mark.data[attr] instanceof Array && validLineArray(mark, mark.data[attr])) {
-                    dataArray = mark.data[attr];
+                    dataArray = _.clone(mark.data[attr]);
                 }
                 else if (coercedArray && validLineArray(mark, coercedArray)) {
-                    dataArray = coercedArray;
+                    dataArray = _.clone(coercedArray);
                 }
                 else {
-                    otherData[attr] = mark.data[attr];
+                    otherData[attr] = _.clone(mark.data[attr]);
                 }
             }
         }
@@ -273,7 +284,7 @@ function extractMappings(schema) {
  */
 function extractNominalMappings (schema) {
     var nominalMappings = [];
-    _.each(schema.schema, function (schemaItem) {
+    _.each(_.keys(schema.data), function (schemaItem) {
         var dataArray = schema.data[schemaItem];
 
         var attrNames = _.keys(schema.attrs);
@@ -433,6 +444,7 @@ function extractMultiLinearMappings(schema) {
     });
     return allLinearMappings;
 }
+
 
 function findRSquaredError(xMatrix, yVector, coeffs) {
     var squaredError = 0;
@@ -758,6 +770,35 @@ function schematize (data, ids, nodeInfo) {
     return dataSchemas;
 }
 
+var getAxis = function(axisGroupNode) {
+    var axis_tick_lines = $(axisGroupNode).find('line');
+    var axis_tick_labels = $(axisGroupNode).find('text');
+    var subdivide = axis_tick_labels.length < axis_tick_lines.length;
+    var tickCount = axis_tick_lines.length;
+    var exampleTick = d3.select(axis_tick_lines[0]);
+    var tickSize = +exampleTick.attr('x2') + (+exampleTick.attr('y2'));
+
+    var axisOrient = +exampleTick.attr("x2") === 0 ? "horizontal" : "vertical";
+    var exampleLabel = d3.select(axis_tick_labels[0]);
+    if (axisOrient === "horizontal") {
+        axisOrient = +exampleLabel.attr("y") > 0 ? "bottom" : "top";
+    }
+    else {
+        axisOrient = +exampleLabel.attr("x") > 0 ? "right" : "left";
+    }
+
+    if (axisOrient === "left" || axisOrient === "top") {
+        tickSize = -tickSize;
+    }
+
+    return d3.svg.axis()
+        .scale(axisGroupNode.__chart__)
+        .tickSubdivide(subdivide)
+        .ticks(tickCount)
+        .tickSize(tickSize)
+        .orient(axisOrient);
+};
+
 /**
  * Given a root SVG element, returns all of the mark generating SVG nodes
  * and their order in the DOM traversal ('id').
@@ -775,7 +816,19 @@ var extractMarkData = function(svgNode) {
         var node = svgChildren[i];
 
         if (node.__chart__) {
-            d3.svg.axis(node);
+            var axis = getAxis(node);
+            var labels = $(node).find("text");
+            var labelData = {};
+            $.each(labels, function(i, label) {
+                labelData[label.__data__] = label.textContent;
+            });
+
+            d3.select(node).call(axis);
+
+            var newLabels = $(node).find("text");
+            $.each(labels, function(i, label) {
+                d3.select(label).text(labelData[label.__data__]);
+            });
         }
 
         var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
@@ -995,7 +1048,7 @@ function extractStyle (domNode) {
     return filteredStyleObject;
 }
 
-var transformedBoundingBox = function (el, to) {
+function transformedBoundingBox(el, to) {
     var bb = el.getBBox();
     var svg = el.ownerSVGElement;
     if (!to) {
@@ -1030,7 +1083,7 @@ var transformedBoundingBox = function (el, to) {
     bb.y = yMin;
     bb.height = yMax - yMin;
     return bb;
-};
+}
 
 var transformedPoint = function(ptX, ptY, ptBaseElem, ptTargetElem) {
     var svg = ptBaseElem.ownerSVGElement;
