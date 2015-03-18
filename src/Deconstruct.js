@@ -5,7 +5,7 @@ var sylvester = require('../lib/sylvester-node.js');
 
 var d3;
 if (typeof document != 'undefined')
-    d3 = require('../lib/d3-decon-fixed.js');
+    d3 = require('../lib/d3-decon-fixed.min.js');
 else
     d3 = require('d3');
 
