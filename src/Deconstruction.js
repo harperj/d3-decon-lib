@@ -1,7 +1,7 @@
 var _ = require('underscore');
 var MarkGroup = require('./MarkGroup');
 
-var Deconstruction = function(svg, groups, unbound) {
+var Deconstruction = function(svg, groups, unbound, axes) {
     var groupData = [];
     groups.forEach(function(group) {
         groupData.push(MarkGroup.fromJSON(group));
@@ -10,10 +10,11 @@ var Deconstruction = function(svg, groups, unbound) {
     this.groups = groupData;
     this.svg = svg;
     this.unbound = unbound;
+    this.axes = axes;
 };
 
 Deconstruction.fromJSON = function(json) {
-    return new Deconstruction(json.svg, json.groups, json.unbound);
+    return new Deconstruction(json.svg, json.groups, json.unbound, json.axes);
 };
 
 Deconstruction.prototype.getGroupByName = function(name) {
