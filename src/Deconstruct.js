@@ -904,6 +904,8 @@ var extractAxes = function(svgNode) {
         if (node.__axis__) {
             var axisOrientation = (node.__axis__.orient === "left" || node.__axis__.orient === "right") ? "yaxis" : "xaxis";
             node.__axis__.axis = axisOrientation;
+            node.__axis__.scaleDomain = node.__scale__.domain();
+            node.__axis__.scaleRange = node.__scale__.range();
             axes.push(node.__axis__);
         }
     }

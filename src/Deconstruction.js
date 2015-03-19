@@ -13,7 +13,7 @@ var Deconstruction = function(svg, groups, unbound) {
 };
 
 Deconstruction.fromJSON = function(json) {
-    return new Deconstruction(json.svg, json.marks, json.unbound);
+    return new Deconstruction(json.svg, json.groups, json.unbound);
 };
 
 Deconstruction.prototype.getGroupByName = function(name) {

@@ -1,7 +1,7 @@
 var _ = require('underscore');
 var Mapping = require('./Mapping');
 
-function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name) {
+function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.data = data;
     this.attrs = attrs;
 
@@ -27,6 +27,8 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name) {
     });
     this.nodeAttrs = nodeAttrs;
     this.name = name;
+    this.svg = svg;
+    this.axis = axis;
 }
 
 MarkGroup.prototype.attrIsMapped = function(attr) {
@@ -124,20 +126,17 @@ MarkGroup.prototype.getMarkBoundingBox = function() {
 };
 
 MarkGroup.fromJSON = function(deconData) {
-    var name = null;
-    if (deconData.name) {
-        name = deconData.name;
-    }
-
     var schema = new MarkGroup(
         deconData.data,
         deconData.attrs,
         deconData.nodeAttrs,
         deconData.ids,
         deconData.mappings,
-        name
+        deconData.name,
+        deconData.svg,
+        deconData.axis
     );
-    schema.svg = deconData.svg;
+
     return schema;
 };
 
