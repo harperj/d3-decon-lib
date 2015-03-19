@@ -34,6 +34,7 @@ var pageDeconstruct = function() {
 
 var deconstruct = function(svgNode) {
     var marks = extractMarkData(svgNode);
+    var axes = extractAxes(svgNode);
     var lineExpandedMarks = expandLines(marks);
 
     lineExpandedMarks.forEach(function(mark) {
@@ -51,9 +52,16 @@ var deconstruct = function(svgNode) {
         group.mappings = extractMappings(group);
     });
 
+    var svgSize = {
+        "width": +$(svgNode).attr("width"),
+        "height": +$(svgNode).attr("height")
+    };
+
     return {
         groups: grouped,
-        marks: marks
+        marks: marks,
+        axes: axes,
+        svg: svgSize
     }
 };
 
@@ -69,8 +77,11 @@ var groupMarks = function(marks) {
 
         var foundSchema = false;
         for (var j = 0; j < dataSchemas.length; ++j) {
+            var sameNodeType = (dataSchemas[j].nodeType === mark.attrs['shape']);
+            var sameAxis = (dataSchemas[j].axis === mark.axis);
+
             if (_.intersection(currSchema, dataSchemas[j].schema).length == currSchema.length
-                && dataSchemas[j].nodeType === mark.attrs['shape']) {
+                && sameNodeType && sameAxis) {
                 foundSchema = true;
                 dataSchemas[j].ids.push(mark.deconID);
                 dataSchemas[j].nodeAttrs.push(mark.nodeAttrs);
@@ -99,6 +110,19 @@ var groupMarks = function(marks) {
                 attrs: {},
                 nodeAttrs: [mark.nodeAttrs]
             };
+
+            if (mark.axis) {
+                newSchema.axis = mark.axis;
+                if (mark.attrs['shape'] === 'text') {
+                    newSchema.name = mark.axis + '-labels';
+                }
+                else if (mark.attrs['shape'] === 'line') {
+                    newSchema.name = mark.axis + '-ticks';
+                }
+                else if (mark.attrs['shape'] === 'linePoint') {
+                    newSchema.name = mark.axis + '-line';
+                }
+            }
 
             for (var dataAttr in mark.data) {
                 if (mark.data.hasOwnProperty(dataAttr)) {
@@ -185,7 +209,8 @@ var getLinePoints = function(mark, lineData) {
             attrs: newMarkAttrs,
             nodeAttrs: _.clone(mark.nodeAttrs),
             lineID: j,
-            deconID: mark.deconID
+            deconID: mark.deconID,
+            axis: mark.axis
         };
         linePoints.push(newMark);
     });
@@ -809,13 +834,12 @@ var extractMarkData = function(svgNode) {
     var svgChildren = $(svgNode).find('*');
     var marks = [];
 
-    /** List of tag names which generate marks in SVG and are accepted by our system. **/
-    var markGeneratingTags = ["circle", "ellipse", "rect", "path", "polygon", "text", "line"];
 
     for (var i = 0; i < svgChildren.length; ++i) {
         var node = svgChildren[i];
 
-        if (node.__chart__) {
+        // Deal with axes, add data if they aren't data-bound.
+        if (node.__chart__ && !node.__axis__) {
             var axis = getAxis(node);
             var labels = $(node).find("text");
             var labelData = {};
@@ -831,24 +855,20 @@ var extractMarkData = function(svgNode) {
             });
         }
 
-        var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
-
-        if (isMarkGenerating) {
-            var mark = {
-                deconID: i,
-                node: node,
-                attrs: extractAttrsFromMark(node),
-                nodeAttrs: extractNodeAttrsFromMark(node)
-            };
-
-            // Extract data for marks that have data bound
-            var markData = extractDataFromMark(node);
-            if (markData !== undefined) {
-                mark.data = markData;
+        // We've found a data-bound axis.  Now let's separate the axis from the remainder of the deconstruction.
+        if (node.__axis__) {
+            var axisOrientation = (node.__axis__.orient === "left" || node.__axis__.orient === "right") ? "yaxis" : "xaxis";
+            var axisChildren = $(node).find('*');
+            for (var j = 0; j < axisChildren.length; ++j) {
+                var axisChild = axisChildren[j];
+                axisChild.__axisMember__ = true;
+                axisChild.__whichAxis__ = axisOrientation;
             }
-
-            marks.push(mark);
         }
+
+        var mark = extractMarkDataFromNode(node, i);
+        if (mark)
+            marks.push(mark);
     }
 
     fixTypes(_.map(marks, function(mark) {return mark.data;}));
@@ -856,22 +876,76 @@ var extractMarkData = function(svgNode) {
     return marks;
 };
 
-var extractDataFromMark = function(node) {
-    var data = node.__data__;
+var extractAxes = function(svgNode) {
+    var svgChildren = $(svgNode).find('*');
+    var axes = [];
 
-    if (data !== undefined) {
-        if (typeof data === "object") {
-            data = $.extend({}, data);
+    for (var i = 0; i < svgChildren.length; ++i) {
+        var node = svgChildren[i];
+
+        // Deal with axes, add data if they aren't data-bound.
+        if (node.__chart__ && !node.__axis__) {
+            var axis = getAxis(node);
+            var labels = $(node).find("text");
+            var labelData = {};
+            $.each(labels, function (i, label) {
+                labelData[label.__data__] = label.textContent;
+            });
+
+            d3.select(node).call(axis);
+
+            var newLabels = $(node).find("text");
+            $.each(labels, function (i, label) {
+                d3.select(label).text(labelData[label.__data__]);
+            });
         }
-        else if (typeof data === "number") {
-            data = {number: data};
+
+        // We've found a data-bound axis.  Now let's separate the axis from the remainder of the deconstruction.
+        if (node.__axis__) {
+            var axisOrientation = (node.__axis__.orient === "left" || node.__axis__.orient === "right") ? "yaxis" : "xaxis";
+            node.__axis__.axis = axisOrientation;
+            axes.push(node.__axis__);
         }
-        else {
-            data = {string: data};
+    }
+    return axes;
+};
+
+var extractMarkDataFromNode = function(node, deconID) {
+    /** List of tag names which generate marks in SVG and are accepted by our system. **/
+    var markGeneratingTags = ["circle", "ellipse", "rect", "path", "polygon", "text", "line"];
+    var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
+    if (isMarkGenerating) {
+        var mark = {
+            deconID: deconID,
+            node: node,
+            attrs: extractAttrsFromMark(node),
+            nodeAttrs: extractNodeAttrsFromMark(node)
+        };
+
+        if (node.__axisMember__) {
+            mark.axis = node.__whichAxis__;
+        }
+
+        // Extract data for marks that have data bound
+        var data = node.__data__;
+
+        if (data !== undefined) {
+            if (typeof data === "object") {
+                data = $.extend({}, data);
+            }
+            else if (typeof data === "number") {
+                data = {number: data};
+            }
+            else {
+                data = {string: data};
+            }
+        }
+        if (data !== undefined) {
+            mark.data = data;
         }
     }
 
-    return data;
+    return mark;
 };
 
 var extractAttrsFromMark = function(mark) {
