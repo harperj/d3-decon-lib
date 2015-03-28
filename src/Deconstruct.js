@@ -1,7 +1,9 @@
 var $ = require('jQuery');
 var _ = require('underscore');
-
 var sylvester = require('../lib/sylvester-node.js');
+
+var Deconstruction = require("./Deconstruction.js");
+var Mapping = require('./Mapping.js');
 
 var d3;
 if (typeof document != 'undefined')
@@ -47,6 +49,8 @@ var deconstruct = function(svgNode) {
     });
 
     var grouped = groupMarks(lineExpandedMarks);
+    //grouped = recombineGroups(grouped);
+    grouped = updateDerivedFields(grouped);
 
     grouped.forEach(function(group) {
         group.mappings = extractMappings(group);
@@ -57,12 +61,235 @@ var deconstruct = function(svgNode) {
         "height": +$(svgNode).attr("height")
     };
 
-    return {
-        groups: grouped,
-        marks: marks,
-        axes: axes,
-        svg: svgSize
+    var decon = new Deconstruction(svgSize, grouped, marks, axes);
+    decon = relateMappingRanges(decon);
+    decon = matchDerived(decon);
+
+    return decon;
+};
+
+var recombineGroups = function recombineGroups(groups) {
+    var removed = 0;
+    for (var i = 0; i < groups.length - removed; ++i) {
+        var group1 = groups[i];
+
+        for (var j = i+1; j < groups.length - removed; ++j) {
+            var group2 = groups[j];
+            if (shouldCombine(group1, group2)) {
+                group1.addGroup(group2);
+                groups.splice(j, 1);
+                removed++;
+            }
+        }
     }
+};
+
+var shouldCombine = function shouldCombine(group1, group2) {
+    var group1Data = _.keys(group1.data);
+    var group2Data = _.keys(group2.data);
+    var differentDataFields = _.difference(group1Data, group2Data);
+    if (differentDataFields.length > 0) {
+        return false;
+    }
+
+    var equalMappings = true;
+    for (var i = 0; i < group1.mappings.length; ++i) {
+        var mapping1 = group1.mappings[i];
+        var foundEqual = false;
+        for (var j = 0; j < group2.mappings.length; ++j) {
+            var mapping2 = group2.mappings[i];
+            if (mapping1.isEqualTo(mapping2)) {
+                foundEqual = true;
+            }
+        }
+
+    }
+};
+
+var matchDerived = function(decon) {
+    return decon;
+};
+
+var updateDerivedFields = function(markGroups) {
+    var orderingsFound = [];
+
+    for (var i = 0; i < markGroups.length; ++i) {
+        var markGroup = markGroups[i];
+        var deconIDs = markGroup.data['deconID'];
+        delete markGroup.data['deconID'];
+        //markGroup.data['deconID' + i] = deconIDs;
+
+        var attrs = ['xPosition', 'yPosition', 'width', 'height'];
+        var prefix = '_deriv_';
+
+        attrs.forEach(function(attr) {
+            //We drop if all values aren't unique.
+            //if (_.uniq(markGroup.attrs[attr]).length === markGroup.attrs[attr].length) {
+                var ordering = _.map(markGroup.attrs[attr], function(attrVal, j) {
+                    return {val: attrVal, ord: j};
+                });
+            //var ordering = _.orderBy(markGroup.attrs[attr], function(attrVal) { return attrVal; });
+
+                orderingsFound.push({group: markGroup, attr: attr, fieldName: prefix + attr + '_' + i,  ordering: ordering});
+
+                ordering = _.sortBy(ordering, function(orderedVal) {return orderedVal.val;});
+                ordering = _.map(ordering, function(orderedVal) {return orderedVal.ord;});
+                markGroup.data[prefix + attr + '_' + i] = ordering;
+            //}
+        });
+
+    }
+
+    var orderingsByAttr = _.groupBy(orderingsFound, function(ordering) { return ordering.attr; });
+    var attrs = _.keys(orderingsByAttr);
+    attrs.forEach(function(attr) {
+        var orderings = orderingsByAttr[attr];
+        var orderingSets = [];
+
+        for (var i = 0; i < orderings.length; ++i) {
+            var ordering = orderings[i];
+            var orderingSetFound = false;
+            orderingSets.forEach(function(orderingSet) {
+                if (sameOrdering(orderingSet[0].ordering, ordering.ordering)) {
+                    orderingSet.push(ordering);
+                }
+            });
+
+            if (!orderingSetFound) {
+                orderingSets.push([ordering]);
+            }
+        }
+
+        orderingSets.forEach(function(orderingSet) {
+            var fieldName = orderingSet[0].fieldName;
+            orderingSet.forEach(function(ordering) {
+                var orderingData = ordering.group.data[ordering.fieldName];
+                delete ordering.group.data[ordering.fieldName];
+                ordering.group.data[fieldName] = orderingData;
+                ordering.group.data = fixEmptyFields(ordering.group.data);
+            });
+        });
+    });
+
+    return markGroups;
+};
+
+var fixEmptyFields = function(obj) {
+    var keys = _.keys(obj);
+    var newObj = {};
+    keys.forEach(function(key) {
+        if (obj[key] !== undefined) {
+            newObj[key] = obj[key];
+        }
+    });
+    return newObj;
+};
+
+var sameOrdering = function(ordering1, ordering2) {
+    var ordering1Obj = {};
+    ordering1.forEach(function(row) { ordering1Obj[row.ord] = Math.round(row.val); });
+    var ordering2Obj = {};
+    ordering2.forEach(function(row) { ordering2Obj[row.ord] = Math.round(row.val); });
+    return _.isEqual(ordering1Obj, ordering2Obj);
+};
+
+var relateMappingRanges = function(decon) {
+    var attrs = _.keys(decon.groups[0].attrs);
+    var mappingSetsByAttr = {};
+
+    attrs.forEach(function(attr) {
+        var mappingsForAttr = decon.getAllMappingsForAttr(attr);
+        var mappingSets = [];
+        mappingsForAttr.forEach(function(mapping) {
+            var mappingRange;
+            if (mapping.type === "linear") {
+                mappingRange = [mapping.params.attrMin, mapping.params.attrMax];
+            }
+            else if (mapping.type === "nominal") {
+                mappingRange = _.values(mapping.params);
+            }
+            else {
+                return;
+            }
+
+            if (mapping.data[0] === "tick") { return; }
+
+            var mappingRef = {
+                data: mapping.type === "linear" ? mapping.data[0] : mapping.data,
+                attr: mapping.attr,
+                type: mapping.type,
+                range: mappingRange,
+                groupID: _.indexOf(decon.groups, mapping.group)
+            };
+
+            var foundMappingSet = false;
+            mappingSets.forEach(function(mappingSet) {
+                if (belongsToSet(mappingRef, mappingSet)) {
+                    updateMappingSetWithMapping(mappingRef, mappingSet);
+                    foundMappingSet = true;
+                }
+            });
+            if (!foundMappingSet) {
+                mappingSets.push({
+                    mappingRefs: [mappingRef],
+                    attributes: _.clone(mappingRange),
+                    type: mapping.type
+                });
+            }
+        });
+        mappingSetsByAttr[attr] = mappingSets;
+        for (var i = 0; i < mappingSets.length; ++i) {
+            var mappingSet = mappingSets[i];
+            for (var j = 0; j < mappingSet.mappingRefs.length; ++j) {
+                var mappingRef = mappingSet.mappingRefs[j];
+                var mapping = decon.groups[mappingRef.groupID].getMapping(mappingRef.data, mappingRef.attr);
+                mapping.attrRange = _.clone(mappingSet.attributes);
+            }
+        }
+    });
+    decon.mappingSets = mappingSetsByAttr;
+    return decon;
+};
+
+var belongsToSet = function(mappingRef, mappingSet) {
+    if (mappingRef.type === "linear" && mappingSet.type === "linear" && mappingRef.data !== "tick") {
+        return rangeOverlaps(mappingSet.attributes, mappingRef.range);
+    }
+    else if (mappingRef.type === "nominal" && mappingSet.type === "nominal") {
+        return _.intersection(_.values(mappingRef.params), mappingRef.range).length >= 1;
+    }
+    return false;
+};
+
+var rangeOverlaps = function(range1, range2) {
+    var range1Min = _.min(range1) - 2;
+    var range1Max = _.max(range1) + 2;
+    var range2Min = _.min(range2);
+    var range2Max = _.max(range2);
+
+    var noOverlap = (range1Min <= range2Min && range1Max <= range2Min) || (range1Min >= range2Max && range1Max >= range2Max);
+    return !noOverlap;
+};
+
+var updateMappingSetWithMapping = function(mappingRef, mappingSet) {
+    if (mappingRef.type === "linear" && mappingRef.data[0] !== "tick") {
+        if (mappingRef.range[0] < mappingSet.attributes[0]) {
+            mappingSet.attributes[0] = mappingRef.range[0];
+        }
+        if (mappingRef.range[1] > mappingSet.attributes[1]) {
+            mappingSet.attributes[1] = mappingRef.range[1];
+        }
+        mappingSet.mappingRefs.push(mappingRef);
+    }
+    else if (mappingRef.type === "nominal") {
+        mappingSet.attributes = _.union(mappingSet.attributes, _.values(mappingRef.range));
+        mappingSet.mappingRefs.push(mappingRef);
+    }
+};
+
+var isDerived = function(fieldName) {
+    var derivedRegex = /_deriv_*/;
+    return fieldName.match(derivedRegex);
 };
 
 var groupMarks = function(marks) {
@@ -142,12 +369,14 @@ var groupMarks = function(marks) {
 };
 
 var expandLines = function(marks) {
-    for (var i = 0; i < marks.length; ++i) {
-        var mark = marks[i];
+    var removed = 0;
+    for (var i = 0; i < marks.length - removed; ++i) {
+        var mark = marks[i - removed];
         var lineData = getLineData(mark);
 
         if (lineData !== undefined) {
-            marks.splice(i, 1);
+            marks.splice(i - removed, 1);
+            removed++;
             var newMarks = getLinePoints(mark, lineData);
             Array.prototype.push.apply(marks, newMarks);
         }
@@ -299,7 +528,7 @@ var extractNodeAttrs = function(nodes) {
 
 function extractMappings(schema) {
     var allMappings = extractNominalMappings(schema).concat(extractMultiLinearMappings(schema));
-    return filterExtraNominalMappings(allMappings);
+    return filterExtraMappings(allMappings);
 }
 
 /**
@@ -380,21 +609,37 @@ function extractNominalMapping (dataName, attrName, dataArray, attrArray) {
     }];
 }
 
-function filterExtraNominalMappings (schemaMappings) {
+function filterExtraMappings (schemaMappings) {
     var attrsWithLinearMapping = [];
+    var attrsWithDerivedMapping = [];
     _.each(schemaMappings, function(schemaMapping) {
         if (schemaMapping.type === "linear") {
             attrsWithLinearMapping.push(schemaMapping.attr);
+        }
+        else if(schemaMapping.type === "derived") {
+            attrsWithDerivedMapping.push(schemaMapping.attr);
         }
     });
     var removed = 0;
     var numMappings = schemaMappings.length;
     for(var ind = 0; ind < numMappings; ++ind) {
-        var schemaMapping = schemaMappings[ind-removed];
+        var schemaMapping = Mapping.fromJSON(schemaMappings[ind-removed]);
         var hasLinear = attrsWithLinearMapping.indexOf(schemaMapping.attr) !== -1;
-        if(schemaMapping.type === 'nominal' && hasLinear) {
+        var hasDerived = attrsWithDerivedMapping.indexOf(schemaMapping.attr) !== -1;
+        if(schemaMapping.type === 'nominal' && (hasLinear || hasDerived)) {
             schemaMappings.splice(ind-removed, 1);
             removed++;
+        }
+        else if(schemaMapping.type === 'derived' && hasLinear) {
+            schemaMappings.splice(ind-removed, 1);
+            removed++;
+        }
+        else if(isDerived(schemaMapping.getData())) {
+            var attr = schemaMapping.getData().match(/_deriv_(.+)_\d*/)[1];
+            if (schemaMapping.attr !== attr) {
+                schemaMappings.splice(ind-removed, 1);
+                removed++;
+            }
         }
     }
 
@@ -442,10 +687,8 @@ function extractMultiLinearMappings(schema) {
                 }
 
                 if (err > 0.9999) {
-                    var attrMin = coeffs[0];
-                    _.each(fieldSet, function(field, fieldInd) {
-                        attrMin += _.min(schema.data[field]) * coeffs[fieldInd+1];
-                    });
+                    var attrMin = _.min(schema.attrs[attr]);
+                    var attrMax = _.max(schema.attrs[attr]);
                     var mapping;
                     mapping = {
                         type: 'linear',
@@ -453,10 +696,16 @@ function extractMultiLinearMappings(schema) {
                         attr: attr,
                         params: {
                             attrMin: attrMin,
+                            attrMax: attrMax,
                             coeffs: coeffs.reverse(),
                             err: err
                         }
                     };
+
+                    if (_.filter(fieldSet, function(field) {return isDerived(field);}).length > 0) {
+                        mapping.type = 'derived';
+                    }
+
                     mappings.push(mapping);
                 }
 
@@ -796,15 +1045,15 @@ function schematize (data, ids, nodeInfo) {
 }
 
 var getAxis = function(axisGroupNode) {
-    var axis_tick_lines = $(axisGroupNode).find('line');
-    var axis_tick_labels = $(axisGroupNode).find('text');
-    var subdivide = axis_tick_labels.length < axis_tick_lines.length;
-    var tickCount = axis_tick_lines.length;
-    var exampleTick = d3.select(axis_tick_lines[0]);
+    var axisTickLines = $(axisGroupNode).find('line');
+    var axisTickLabels = $(axisGroupNode).find('text');
+    var subdivide = axisTickLabels.length < axisTickLines.length;
+    var tickCount = axisTickLines.length;
+    var exampleTick = d3.select(axisTickLines[0]);
     var tickSize = +exampleTick.attr('x2') + (+exampleTick.attr('y2'));
 
     var axisOrient = +exampleTick.attr("x2") === 0 ? "horizontal" : "vertical";
-    var exampleLabel = d3.select(axis_tick_labels[0]);
+    var exampleLabel = d3.select(axisTickLabels[0]);
     if (axisOrient === "horizontal") {
         axisOrient = +exampleLabel.attr("y") > 0 ? "bottom" : "top";
     }
@@ -904,8 +1153,29 @@ var extractAxes = function(svgNode) {
         if (node.__axis__) {
             var axisOrientation = (node.__axis__.orient === "left" || node.__axis__.orient === "right") ? "yaxis" : "xaxis";
             node.__axis__.axis = axisOrientation;
-            node.__axis__.scaleDomain = node.__scale__.domain();
-            node.__axis__.scaleRange = node.__scale__.range();
+            node.__axis__.scaleDomain = _.clone(node.__chart__.domain());
+
+            var axisBoundingBox = transformedBoundingBox(node);
+            var localScaleRange = node.__chart__.range();
+            var axisTransform = node.getTransformToElement(node.ownerSVGElement);
+            var axisZero = node.ownerSVGElement.createSVGPoint().matrixTransform(axisTransform);
+            node.__axis__.offset = {
+                x: axisZero.x,
+                y: axisZero.y
+            };
+
+            if (localScaleRange.length > 2) {
+                var axisOffset = axisOrientation === "xaxis" ? axisZero.x : axisZero.y;
+                node.__axis__.scaleRange = _.map(localScaleRange, function(rangeVal) { return rangeVal + axisOffset; });
+            }
+            else if (axisOrientation === "xaxis") {
+                node.__axis__.scaleRange = [localScaleRange[0] + axisZero.x, localScaleRange[1] + axisZero.x];
+            }
+            else if (axisOrientation === "yaxis") {
+                node.__axis__.scaleRange = [localScaleRange[0] + axisZero.y, localScaleRange[1] + axisZero.y];
+            }
+
+            node.__axis__.boundingBox = axisBoundingBox;
             axes.push(node.__axis__);
         }
     }
@@ -942,6 +1212,11 @@ var extractMarkDataFromNode = function(node, deconID) {
                 data = {string: data};
             }
         }
+        //
+        //if (node.tagName.toLowerCase() === "text" && data) {
+        //    data.text = $(node).text();
+        //}
+
         if (data !== undefined) {
             mark.data = data;
         }
@@ -961,6 +1236,13 @@ var extractAttrsFromMark = function(mark) {
     attrs.area = boundingBox.width * boundingBox.height;
     attrs.width = boundingBox.width;
     attrs.height = boundingBox.height;
+
+    if (mark.tagName === "text") {
+        attrs.text = $(mark).text();
+    }
+    else {
+        attrs.text = "";
+    }
 
     // TODO: FIXME
     attrs.rotation = 0;
@@ -1183,5 +1465,6 @@ module.exports = {
     schematize: schematize,
     extractData: extractMarkData,
     extractVisAttrs: extractVisAttrs,
-    extractStyle: extractStyle
+    extractStyle: extractStyle,
+    isDerived: isDerived
 };

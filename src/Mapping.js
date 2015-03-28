@@ -2,12 +2,25 @@
  * Created by harper on 11/25/14.
  */
 
-function Mapping(data_field_name, attr_name, mapping_type, params) {
+function Mapping(data_field_name, attr_name, mapping_type, params, dataRange, attrRange) {
     this.data = data_field_name;
     this.attr = attr_name;
     this.type = mapping_type;
     this.params = params;
+    this.dataRange = dataRange;
+    this.attrRange = attrRange;
 }
+
+Mapping.fromJSON = function(json) {
+    return new Mapping(
+        json.data,
+        json.attr,
+        json.type,
+        json.params,
+        json.dataRange,
+        json.attrRange
+    );
+};
 
 Mapping.prototype.dataFromAttr = function(attrVal) {
     // TODO: Fix the multivariate case
@@ -28,16 +41,23 @@ Mapping.prototype.dataFromAttr = function(attrVal) {
     }
 };
 
+Mapping.prototype.getData = function() {
+    if (this.type === "linear" || this.type === "derived") {
+        return this.data[0];
+    }
+    return this.data;
+};
+
 Mapping.prototype.isEqualTo = function(otherMapping) {
     if (this.type === "linear" && otherMapping.type === "linear") {
-        if (this.params.length !== otherMapping.params.length) {
+        if (this.params.coeffs.length !== otherMapping.params.coeffs.length) {
             return false;
         }
 
-        for (var i = 0; i < this.params.length; ++i) {
-            var thisParam = this.params[i];
-            var otherParam = otherMapping.params[i];
-            if (thisParam > otherParam + 1.5 && thisParam < otherParam - 1.5) {
+        for (var i = 0; i < this.params.coeffs.length; ++i) {
+            var thisParam = this.params.coeffs[i];
+            var otherParam = otherMapping.params.coeffs[i];
+            if (thisParam > otherParam + 1.5 || thisParam < otherParam - 1.5) {
                 return false;
             }
         }
@@ -74,7 +94,7 @@ Mapping.prototype.map = function(val) {
         return val * this.params.coeffs[0] + this.params.coeffs[1];
     }
     else {
-        return this.coeffs[val];
+        return this.params[val];
     }
 };
 

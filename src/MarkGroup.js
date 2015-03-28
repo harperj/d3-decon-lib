@@ -1,5 +1,6 @@
 var _ = require('underscore');
 var Mapping = require('./Mapping');
+var Deconstruct = require('./Deconstruct.js');
 
 function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.data = data;
@@ -23,7 +24,7 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.ids = ids;
 
     this.mappings = _.map(mappings, function(mapping) {
-        return new Mapping(mapping.data, mapping.attr, mapping.type, mapping.params);
+        return new Mapping(mapping.data, mapping.attr, mapping.type, mapping.params, mapping.dataRange, mapping.attrRange);
     });
     this.nodeAttrs = nodeAttrs;
     this.name = name;
@@ -173,6 +174,111 @@ MarkGroup.prototype.getNonDerivedMappingsForAttr = function(attr) {
     return mappings;
 };
 
+MarkGroup.prototype.addData = function(data) {
+    var mg = this;
+
+    var dataFields = _.keys(this.data);
+    var attrs = _.keys(this.attrs);
+
+    if (_.difference(_.keys(data), dataFields).length !== 0) {
+        return undefined;
+    }
+    else {
+        dataFields.forEach(function(field) {
+            mg.data[field].push(data[field]);
+        });
+        attrs.forEach(function(attr) {
+            mg.attrs[attr].push(mg.attrs[attr][0]);
+        });
+        this.nodeAttrs.push(_.clone(this.nodeAttrs[0]));
+        this.ids.push(_.max(this.ids) + 1);
+    }
+};
+
+MarkGroup.prototype.addMarksForData = function() {
+    var mg = this;
+
+    var dataFields = _.keys(this.data);
+    var someDataField = dataFields[0];
+    var dataLength = this.data[someDataField].length;
+    var attrNames = _.keys(this.attrs);
+    while (this.ids.length < dataLength) {
+        attrNames.forEach(function(attrName) {
+            mg.attrs[attrName].push(mg.attrs[attrName][0]);
+        });
+        this.nodeAttrs.push(_.clone(this.nodeAttrs[0]));
+        this.ids.push(_.max(this.ids) + 1);
+    }
+    if (this.ids.length > dataLength) {
+        attrNames.forEach(function(attrName) {
+            mg.attrs[attrName].splice(dataLength);
+            mg.nodeAttrs.splice(dataLength);
+            mg.ids.splice(dataLength);
+        });
+    }
+};
+
+MarkGroup.prototype.getNewMappings = function() {
+    this.mappings = Deconstruct.extractMappings(this);
+};
+
+MarkGroup.prototype.updateUnmapped = function() {
+    var me = this;
+    var attrs = _.keys(this.attrs);
+    var unmappedAttrs = _.difference(attrs, _.map(this.mappings, function(mapping) { return mapping.attr; }));
+
+    unmappedAttrs.forEach(function(unmappedAttr) {
+        var attrVals = me.attrs[unmappedAttr];
+        if (typeof attrVals[0] === 'number') {
+            var attrSum = _.reduce(attrVals, function(x, y) {return x+y;});
+            var avg = attrSum / attrVals.length;
+            me.attrs[unmappedAttr] = _.map(attrVals, function() {return avg;});
+        }
+        else {
+            var counts = _.countBy(attrVals, function(attrVal) {return attrVal;});
+            var maxCount = -1;
+            var maxCountVal = undefined;
+            _.each(counts, function(count, val) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    maxCountVal = val;
+                }
+            });
+            me.attrs[unmappedAttr] = _.map(attrVals, function() {return maxCountVal;});
+        }
+    });
+};
+
+MarkGroup.prototype.resetNonMapped = function() {
+    var mg = this;
+    var mappedAttrs = _.map(this.mappings, function(mapping) { return mapping.attr; });
+    mappedAttrs = _.uniq(mappedAttrs);
+    var allAttrs = _.keys(this.attrs);
+
+    _.each(allAttrs, function(attr) {
+        if (!_.contains(mappedAttrs, attr)) {
+            for (var i = 0; i < mg.attrs[attr].length; ++i) {
+                mg.attrs[attr][i] = mg.attrs[attr][0];
+            }
+        }
+    });
+};
+
+MarkGroup.prototype.removeLastDataRow = function() {
+    var mg = this;
+    var dataFields = _.keys(this.data);
+    var attrs = _.keys(this.attrs);
+
+    dataFields.forEach(function(field) {
+        mg.data[field].splice(mg.data[field].length-1);
+    });
+    attrs.forEach(function(attr) {
+        mg.attrs[attr].splice(mg.attrs[attr].length-1);
+    });
+    this.nodeAttrs.splice(this.nodeAttrs.length-1);
+    this.ids.splice(this.ids.length-1);
+};
+
 MarkGroup.prototype.getAttrRange = function(attr) {
     var min = _.min(this.attrs[attr]);
     var max = _.max(this.attrs[attr]);
@@ -187,7 +293,8 @@ MarkGroup.prototype.getDataRange = function(data) {
 
 MarkGroup.prototype.getMapping = function(data, attr) {
     for (var i = 0; i < this.mappings.length; ++i) {
-        if (this.mappings[i].data[0] === data && this.mappings[i].attr === attr) {
+        var thisMappingData = this.mappings[i].type === "linear" ? this.mappings[i].data[0] : this.mappings[i].data;
+        if (thisMappingData === data && this.mappings[i].attr === attr) {
             return this.mappings[i];
         }
     }
