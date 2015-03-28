@@ -49,7 +49,7 @@ var deconstruct = function(svgNode) {
     });
 
     var grouped = groupMarks(lineExpandedMarks);
-    //grouped = recombineGroups(grouped);
+    grouped = recombineGroups(grouped);
     grouped = updateDerivedFields(grouped);
 
     grouped.forEach(function(group) {
@@ -82,6 +82,7 @@ var recombineGroups = function recombineGroups(groups) {
             }
         }
     }
+    return groups;
 };
 
 var shouldCombine = function shouldCombine(group1, group2) {
@@ -1319,7 +1320,7 @@ function fixTypes (objArray) {
                 rgbChannels = rgbRegex.exec(object[property]);
                 // If this is our first pass, set it to whatever we see
                 if (!fieldType.hasOwnProperty(property)) {
-                    if (!isNaN(+object[property])) {
+                    if (!isNaN(+object[property]) && property !== "text") {
                         // This is a number
                         fieldType[property] = "number";
                     }
