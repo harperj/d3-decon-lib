@@ -3,6 +3,7 @@ var _ = require('underscore');
 var sylvester = require('../lib/sylvester-node.js');
 
 var Deconstruction = require("./Deconstruction.js");
+var MarkGroup = require("./MarkGroup.js");
 var Mapping = require('./Mapping.js');
 
 var d3;
@@ -49,9 +50,12 @@ var deconstruct = function(svgNode) {
     });
 
     var grouped = groupMarks(lineExpandedMarks);
+
+    grouped.forEach(function(group) {
+        group.mappings = extractMappings(group);
+    });
     grouped = recombineGroups(grouped);
     grouped = updateDerivedFields(grouped);
-
     grouped.forEach(function(group) {
         group.mappings = extractMappings(group);
     });
@@ -71,10 +75,12 @@ var deconstruct = function(svgNode) {
 var recombineGroups = function recombineGroups(groups) {
     var removed = 0;
     for (var i = 0; i < groups.length - removed; ++i) {
-        var group1 = groups[i];
+        var group1 = MarkGroup.fromJSON(groups[i]);
 
         for (var j = i+1; j < groups.length - removed; ++j) {
-            var group2 = groups[j];
+            var group2 = MarkGroup.fromJSON(groups[j]);
+            if (i === j) continue;
+
             if (shouldCombine(group1, group2)) {
                 group1.addGroup(group2);
                 groups.splice(j, 1);
@@ -93,18 +99,26 @@ var shouldCombine = function shouldCombine(group1, group2) {
         return false;
     }
 
+    if (group1.name || group2.name) {
+        return false;
+    }
+
     var equalMappings = true;
     for (var i = 0; i < group1.mappings.length; ++i) {
-        var mapping1 = group1.mappings[i];
+        var mapping1 = Mapping.fromJSON(group1.mappings[i]);
+        if (mapping1.getData() === "deconID") continue;
+
         var foundEqual = false;
         for (var j = 0; j < group2.mappings.length; ++j) {
-            var mapping2 = group2.mappings[i];
+            var mapping2 = Mapping.fromJSON(group2.mappings[j]);
             if (mapping1.isEqualTo(mapping2)) {
                 foundEqual = true;
             }
         }
+        if (!foundEqual) equalMappings = false;
 
     }
+    return equalMappings;
 };
 
 var matchDerived = function(decon) {

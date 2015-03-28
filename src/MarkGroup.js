@@ -38,6 +38,24 @@ MarkGroup.prototype.attrIsMapped = function(attr) {
     }) !== undefined;
 };
 
+MarkGroup.prototype.addGroup = function(otherGroup) {
+    var me = this;
+
+    for (var i = 0; i < otherGroup.ids.length; ++i) {
+        this.ids.push(otherGroup.ids[i]);
+        this.nodeAttrs.push(otherGroup.nodeAttrs[i]);
+
+        var attrs = _.keys(otherGroup.attrs);
+        var dataFields = _.keys(otherGroup.data);
+        _.each(attrs, function(attr) {
+            me.attrs[attr].push(otherGroup.attrs[attr][i]);
+        });
+        _.each(dataFields, function(dataField) {
+            me.data[dataField].push(otherGroup.data[dataField][i]);
+        });
+    }
+};
+
 MarkGroup.prototype.uniqVals = function(fieldName, isAttr) {
     var allVals;
     if (isAttr) {
