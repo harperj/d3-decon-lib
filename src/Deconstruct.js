@@ -255,10 +255,36 @@ var relateMappingRanges = function(decon) {
         mappingSetsByAttr[attr] = mappingSets;
         for (var i = 0; i < mappingSets.length; ++i) {
             var mappingSet = mappingSets[i];
+
+            if (typeof mappingSet.attributes[0] !== 'number' || mappingSet.attributes.length > 2) continue;
+            //
+            //var maxRangeMappingRef = _.sortBy(mappingSet.mappingRefs, function(mapping) {
+            //    return Math.abs(mapping.range[1] - mapping.range[0]);
+            //});
+            //maxRangeMappingRef = maxRangeMappingRef[0];
+            //
+            //var maxRangeMapping = MarkGroup.fromJSON(decon.groups[maxRangeMappingRef.groupID])
+            //                               .getMapping(maxRangeMappingRef.data, maxRangeMappingRef.attr);
+            //var maxMappingDataRange = [maxRangeMapping.invert(maxRangeMappingRef.range[0]), maxRangeMapping.invert(maxRangeMappingRef.range[1])];
+
+            var minGroupDataVal = _.min(mappingSet.mappingRefs, function(mappingRef) {
+                var group = decon.groups[mappingRef.groupID];
+                return _.min(group.data[mappingRef.data]);
+            });
+            minGroupDataVal = _.min(decon.groups[minGroupDataVal.groupID].data[minGroupDataVal.data]);
+
+            var maxGroupDataVal = _.max(mappingSet.mappingRefs, function(mappingRef) {
+                var group = decon.groups[mappingRef.groupID];
+                return _.max(group.data[mappingRef.data]);
+            });
+            maxGroupDataVal = _.max(decon.groups[maxGroupDataVal.groupID].data[maxGroupDataVal.data]);
+
             for (var j = 0; j < mappingSet.mappingRefs.length; ++j) {
                 var mappingRef = mappingSet.mappingRefs[j];
                 var mapping = decon.groups[mappingRef.groupID].getMapping(mappingRef.data, mappingRef.attr);
-                mapping.attrRange = _.clone(mappingSet.attributes);
+                //mapping.attrRange = _.clone(mappingSet.attributes);
+                mapping.dataRange = [minGroupDataVal, maxGroupDataVal];
+                mapping.attrRange = [mapping.map(minGroupDataVal), mapping.map(maxGroupDataVal)];
             }
         }
     });
@@ -304,7 +330,7 @@ var updateMappingSetWithMapping = function(mappingRef, mappingSet) {
 
 var isDerived = function(fieldName) {
     var derivedRegex = /_deriv_*/;
-    return fieldName.match(derivedRegex);
+    return fieldName.match(derivedRegex) || fieldName === 'lineID';
 };
 
 var groupMarks = function(marks) {
@@ -350,7 +376,8 @@ var groupMarks = function(marks) {
                 ids: [mark.deconID],
                 data: {},
                 attrs: {},
-                nodeAttrs: [mark.nodeAttrs]
+                nodeAttrs: [mark.nodeAttrs],
+                isLine: mark.attrs['shape'] === 'linePoint'
             };
 
             if (mark.axis) {
@@ -650,7 +677,9 @@ function filterExtraMappings (schemaMappings) {
             removed++;
         }
         else if(isDerived(schemaMapping.getData())) {
-            var attr = schemaMapping.getData().match(/_deriv_(.+)_\d*/)[1];
+            var attr = schemaMapping.getData().match(/_deriv_(.+)_\d*/);
+            attr = attr && attr.length > 1 ? attr[1] : null;
+
             if (schemaMapping.attr !== attr) {
                 schemaMappings.splice(ind-removed, 1);
                 removed++;
@@ -1039,7 +1068,8 @@ function schematize (data, ids, nodeInfo) {
                 ids: [ids[i]],
                 data: {},
                 attrs: {},
-                nodeAttrs: [nodeAttrs[i]]
+                nodeAttrs: [nodeAttrs[i]],
+                isLine: nodeInfo.attrData[i]['shape'] === 'linePoint'
             };
 
             for (var dataAttr in data[i]) {
@@ -1328,7 +1358,7 @@ function fixTypes (objArray) {
         for (property in object) {
             if (object.hasOwnProperty(property)) {
                 if (object[property] instanceof Date) {
-                    object[property] = object[property].toString();
+                    object[property] = object[property].getTime();
                 }
 
                 rgbChannels = rgbRegex.exec(object[property]);
@@ -1406,6 +1436,7 @@ function extractStyle (domNode) {
         "stroke",
         "fill",
         "font-family",
+        "font-weight",
         "font-size",
         "stroke-width",
         "opacity",
