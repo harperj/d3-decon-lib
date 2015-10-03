@@ -98,6 +98,20 @@ Mapping.prototype.map = function(val) {
     }
 };
 
+Mapping.prototype.linearRelationshipTo = function(otherMapping) {
+    assert(this.type === "linear");
+    assert(otherMapping.type === "linear");
+
+    var a = this.params.coeffs[0];
+    var b = this.params.coeffs[1];
+    var x = otherMapping.params.coeffs[0];
+    var y = otherMapping.params.coeffs[1];
+
+    var relCoeff1 = x / a;
+    var relCoeff2 = y - ((b * x) / a);
+    return [relCoeff1, relCoeff2];
+};
+
 Mapping.prototype.invert = function(attrVal) {
     var dataVal;
     if (this.type = "linear") {

@@ -1,6 +1,7 @@
 var _ = require('underscore');
 var Mapping = require('./Mapping');
 var Deconstruct = require('./Deconstruct.js');
+var Deconstruction = require('./Deconstruction.js');
 
 function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.data = data;
@@ -346,6 +347,12 @@ MarkGroup.prototype.getDataCSVBlob = function() {
     dataRows = dataRows.join("\n");
 
     return dataRows;
+};
+
+MarkGroup.getBoundingBoxFromGroups = function(groups) {
+    var decon = new Deconstruction({x: 0, y: 0, width: 0, height: 0}, groups);
+    decon.svg = decon.getMarkBoundingBox({x: 0, y: 0, width: 0, height: 0});
+    return decon.svg;
 };
 
 module.exports = MarkGroup;
