@@ -1,6 +1,4 @@
-/**
- * Created by harper on 11/25/14.
- */
+var assert = require('assert');
 
 function Mapping(data_field_name, attr_name, mapping_type, params, dataRange, attrRange) {
     this.data = data_field_name;

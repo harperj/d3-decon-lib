@@ -35,8 +35,8 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
 
 MarkGroup.prototype.attrIsMapped = function(attr) {
     return _.find(this.mappings, function(mapping) {
-        return mapping.attr == attr;
-    }) !== undefined;
+            return mapping.attr == attr;
+        }) !== undefined;
 };
 
 MarkGroup.prototype.addGroup = function(otherGroup) {
@@ -70,6 +70,9 @@ MarkGroup.prototype.uniqVals = function(fieldName, isAttr) {
 
 MarkGroup.prototype.updateAttrsFromMappings = function() {
     var schema = this;
+    var mappedAttrs = _.map(schema.mappings, function (mapping) {
+        return mapping.attr;
+    });
     _.each(schema.mappings, function(mapping) {
         var data = schema.data;
         var attrs = schema.attrs;
@@ -83,6 +86,11 @@ MarkGroup.prototype.updateAttrsFromMappings = function() {
             for (var j = 0; j < data[mapping.data[0]].length; ++j) {
                 var dataVal = data[mapping.data[0]][j];
                 attrs[mapping.attr][j] = dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1];
+
+                if (mapping.attr === "area") {
+                    attrs["width"][j] = Math.sqrt(+dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1]);
+                    attrs["height"][j] = Math.sqrt(+dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1]);
+                }
             }
         }
     });
@@ -245,6 +253,9 @@ MarkGroup.prototype.updateUnmapped = function() {
     var me = this;
     var attrs = _.keys(this.attrs);
     var unmappedAttrs = _.difference(attrs, _.map(this.mappings, function(mapping) { return mapping.attr; }));
+    if (_.contains(attrs, "area")) {
+        unmappedAttrs = _.difference(unmappedAttrs, ["width", "height"]);
+    }
 
     unmappedAttrs.forEach(function(unmappedAttr) {
         var attrVals = me.attrs[unmappedAttr];
