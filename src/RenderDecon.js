@@ -1,4 +1,4 @@
-var _ = require("underscore");
+var _ = require("lodash");
 var d3 = require("d3");
 
 var renderVis = function(decon, svgNode) {

@@ -1,4 +1,4 @@
-var _ = require('underscore');
+var _ = require('lodash');
 var Mapping = require('./Mapping');
 var Deconstruct = require('./Deconstruct.js');
 var Deconstruction = require('./Deconstruction.js');

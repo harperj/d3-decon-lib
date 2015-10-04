@@ -1,4 +1,4 @@
-var _ = require('underscore');
+var _ = require('lodash');
 var MarkGroup = require('./MarkGroup');
 
 var Deconstruction = function(svg, groups, unbound, axes, mappingSets) {

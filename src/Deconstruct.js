@@ -1,5 +1,5 @@
 var $ = require('jQuery');
-var _ = require('underscore');
+var _ = require('lodash');
 var sylvester = require('../lib/sylvester-node.js');
 
 var Deconstruction = require("./Deconstruction.js");
