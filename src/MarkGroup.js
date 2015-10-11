@@ -31,6 +31,9 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.name = name;
     this.svg = svg;
     this.axis = axis;
+
+    this.updateAttrsFromMappings();
+    this.updateUnmapped();
 }
 
 MarkGroup.prototype.attrIsMapped = function(attr) {
@@ -73,6 +76,8 @@ MarkGroup.prototype.updateAttrsFromMappings = function() {
     var mappedAttrs = _.map(schema.mappings, function (mapping) {
         return mapping.attr;
     });
+    var updatedAttrs = [];
+
     _.each(schema.mappings, function(mapping) {
         var data = schema.data;
         var attrs = schema.attrs;
@@ -87,7 +92,7 @@ MarkGroup.prototype.updateAttrsFromMappings = function() {
                 var dataVal = data[mapping.data[0]][j];
                 attrs[mapping.attr][j] = dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1];
 
-                if (mapping.attr === "area") {
+                if (mapping.attr === "area" && !_.includes(mappedAttrs, 'width') && !_.includes(mappedAttrs, 'height')) {
                     attrs["width"][j] = Math.sqrt(+dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1]);
                     attrs["height"][j] = Math.sqrt(+dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1]);
                 }
@@ -107,7 +112,7 @@ MarkGroup.prototype.updateMarks = function(val, attr, ids) {
         }
         else if (attr === "width" || attr === "height") {
             schema.attrs["area"] = schema.attrs["width"][ind]
-            * schema.attrs["height"][ind];
+                * schema.attrs["height"][ind];
         }
     });
 };
@@ -252,8 +257,9 @@ MarkGroup.prototype.getNewMappings = function() {
 MarkGroup.prototype.updateUnmapped = function() {
     var me = this;
     var attrs = _.keys(this.attrs);
-    var unmappedAttrs = _.difference(attrs, _.map(this.mappings, function(mapping) { return mapping.attr; }));
-    if (_.contains(attrs, "area")) {
+    var mappedAttrs = _.map(this.mappings, function(mapping) { return mapping.attr; });
+    var unmappedAttrs = _.difference(attrs, mappedAttrs);
+    if (_.contains(mappedAttrs, "area") && !_.contains(mappedAttrs, "width") && !_.contains(mappedAttrs, "height")) {
         unmappedAttrs = _.difference(unmappedAttrs, ["width", "height"]);
     }
 
