@@ -94,8 +94,8 @@ var recombineGroups = function recombineGroups(groups) {
 var shouldCombine = function shouldCombine(group1, group2) {
     var group1Data = _.keys(group1.data);
     var group2Data = _.keys(group2.data);
-    var differentDataFields = _.difference(group1Data, group2Data);
-    if (differentDataFields.length > 0) {
+    var allDataFields = _.union(group1Data, group2Data);
+    if (allDataFields.length > group1Data.length || group1Data.length !== group2Data.length) {
         return false;
     }
 
