@@ -124,10 +124,18 @@ MarkGroup.prototype.getMarkBoundingBox = function() {
     var yMax = Number.MIN_VALUE;
 
     for (var i = 0; i < this.attrs["xPosition"].length; ++i) {
-        var markMinX = this.attrs["xPosition"][i] - this.attrs["width"][i] / 2;
-        var markMinY = this.attrs["yPosition"][i] - this.attrs["height"][i] / 2;
-        var markMaxX = this.attrs["xPosition"][i] + this.attrs["width"][i] / 2;
-        var markMaxY = this.attrs["yPosition"][i] + this.attrs["height"][i] / 2;
+        if (this.attrs["shape"][i] !== "linePoint") {
+            var markMinX = this.attrs["xPosition"][i] - this.attrs["width"][i] / 2;
+            var markMinY = this.attrs["yPosition"][i] - this.attrs["height"][i] / 2;
+            var markMaxX = this.attrs["xPosition"][i] + this.attrs["width"][i] / 2;
+            var markMaxY = this.attrs["yPosition"][i] + this.attrs["height"][i] / 2;
+        }
+        else {
+            var markMinX = this.attrs["xPosition"][i];
+            var markMinY = this.attrs["yPosition"][i];
+            var markMaxX = this.attrs["xPosition"][i];
+            var markMaxY = this.attrs["yPosition"][i];
+        }
 
         if (this.data.hasOwnProperty("lineID")) {
             markMinX = this.attrs["xPosition"][i];
