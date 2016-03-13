@@ -453,7 +453,7 @@ var getLinePoints = function(mark, lineData) {
     var linePoints = [];
 
     // If we have a basis line we should delete the irrelevant points
-    if (lineData.array.length < mark.node.animatedPathSegList.length) {
+    if (lineData.array.length+2 === mark.node.animatedPathSegList.length) {
         linePointPositions.splice(1, 1);
         linePointPositions.splice(linePointPositions.length-2, 1);
     }
@@ -474,6 +474,7 @@ var getLinePoints = function(mark, lineData) {
         newMarkAttrs['xPosition'] = linePointPositions[j].x;
         newMarkAttrs['yPosition'] = linePointPositions[j].y;
         newMarkAttrs['shape'] = 'linePoint';
+        ptData['area'] = 'yes';
 
         var newMark = {
             data: ptData,
@@ -504,7 +505,9 @@ var getLinePointPositions = function(mark) {
         var transformedPt = transformedPoint(currX, currY, mark.node);
         linePointPositions.push({
             x: transformedPt.x,
-            y: transformedPt.y
+            y: transformedPt.y,
+            pathSegType: seg.pathSegType,
+            pathSegTypeAsLetter: seg.pathSegTypeAsLetter
         });
     }
     return linePointPositions;
@@ -513,7 +516,8 @@ var getLinePointPositions = function(mark) {
 var getLineData = function(mark) {
     var validLineArray = function(mark, dataArray) {
         return mark.node.animatedPathSegList.length === dataArray.length
-            || mark.node.animatedPathSegList.length === dataArray.length+2;
+            || mark.node.animatedPathSegList.length === dataArray.length+2  // spline line?
+            || mark.node.animatedPathSegList.length === dataArray.length*2+1; // area
     };
 
     if (mark.attrs['shape'] === 'path') {
@@ -942,6 +946,61 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
         });
 
         lineLength++;
+    }
+
+    var schema = [];
+    var lineData = [];
+    var lineAttrs = [];
+    var lineIDs = [];
+    var lineNodeAttrs = [];
+    var lineCount = 0;
+
+    if (dataArray && dataArray.length === 2*lineLength) {
+        if (dataArray[0] instanceof Object) {
+            schema = schema.concat(_.keys(dataArray[0]));
+        }
+        else {
+            schema = schema.concat(typeof dataArray[0]);
+        }
+        schema = schema.concat(_.keys(otherAttrs));
+
+        for (var k = 0; k < dataArray.length; ++k) {
+            var areaDataRow = {};
+            if (dataArray[0] instanceof Object) {
+                areaDataRow = _.extend(areaDataRow, dataArray[k]);
+            }
+            else {
+                areaDataRow = {dataType: dataArray[k]};
+            }
+            areaDataRow = _.extend(areaDataRow, otherAttrs);
+            areaDataRow['lineID'] = lineCount;
+            lineCount++;
+            lineData[k] = areaDataRow;
+            lineAttrs[k] = attrs;
+            lineAttrs[k].xPosition = linePointPositions[k].x;
+            lineAttrs[k].yPosition = linePointPositions[k].y;
+            lineIDs.push(id);
+            lineNodeAttrs.push(nodeAttrs);
+
+            var svg = node.ownerSVGElement;
+            var transform = node.getTransformToElement(svg);
+            var pt = svg.createSVGPoint();
+            pt.x = segs[k].x;
+            pt.y = segs[k].y;
+            pt = pt.matrixTransform(transform);
+            lineAttrs[k]['xPosition'] = pt.x;
+            lineAttrs[k]['yPosition'] = pt.y;
+        }
+
+        return {
+            schema: schema,
+            ids: lineIDs,
+            data: lineData,
+            attrs: lineAttrs,
+            nodeAttrs: lineNodeAttrs,
+            isLine: true,
+            isArea: true
+        }
     }
 
     if (dataArray && dataArray.length === lineLength) {
