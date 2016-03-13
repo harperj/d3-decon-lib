@@ -2,6 +2,11 @@ var $ = require('jQuery');
 var _ = require('underscore');
 var sylvester = require('../lib/sylvester-node.js');
 
+/* Polyfill for node.getTransformToElement */
+SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function(elem) {
+    return elem.getScreenCTM().inverse().multiply(this.getScreenCTM());
+};
+
 var pageDeconstruct = function() {
     var svgNodes = $('svg');
     var deconstructed = [];
