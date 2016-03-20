@@ -1,11 +1,21 @@
 var $ = require('jQuery');
-var _ = require('underscore');
+var _ = require('lodash');
 var sylvester = require('../lib/sylvester-node.js');
 
 /* Polyfill for node.getTransformToElement */
 SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function(elem) {
     return elem.getScreenCTM().inverse().multiply(this.getScreenCTM());
 };
+
+var Deconstruction = require("./Deconstruction.js");
+var MarkGroup = require("./MarkGroup.js");
+var Mapping = require('./Mapping.js');
+
+var d3;
+if (typeof document !== 'undefined')
+    d3 = require('../lib/d3-decon-fixed.min.js');
+else
+    d3 = require('d3');
 
 var pageDeconstruct = function() {
     var svgNodes = $('svg');
@@ -32,6 +42,7 @@ var pageDeconstruct = function() {
 
 var deconstruct = function(svgNode) {
     var marks = extractMarkData(svgNode);
+    var axes = extractAxes(svgNode);
     var lineExpandedMarks = expandLines(marks);
 
     lineExpandedMarks.forEach(function(mark) {
@@ -48,11 +59,283 @@ var deconstruct = function(svgNode) {
     grouped.forEach(function(group) {
         group.mappings = extractMappings(group);
     });
+    grouped = recombineGroups(grouped);
+    grouped = updateDerivedFields(grouped);
+    grouped.forEach(function(group) {
+        group.mappings = extractMappings(group);
+    });
 
-    return {
-        groups: grouped,
-        marks: marks
+    var svgSize = {
+        "width": +$(svgNode).attr("width"),
+        "height": +$(svgNode).attr("height")
+    };
+
+    var decon = new Deconstruction(svgSize, grouped, marks, axes);
+    decon = relateMappingRanges(decon);
+    decon = matchDerived(decon);
+
+    return decon;
+};
+
+var recombineGroups = function recombineGroups(groups) {
+    var removed = 0;
+    for (var i = 0; i < groups.length - removed; ++i) {
+        var group1 = MarkGroup.fromJSON(groups[i]);
+
+        for (var j = i+1; j < groups.length - removed; ++j) {
+            var group2 = MarkGroup.fromJSON(groups[j]);
+            if (i === j) continue;
+
+            if (shouldCombine(group1, group2)) {
+                group1.addGroup(group2);
+                groups.splice(j, 1);
+                removed++;
+            }
+        }
     }
+    return groups;
+};
+
+var shouldCombine = function shouldCombine(group1, group2) {
+    var group1Data = _.keys(group1.data);
+    var group2Data = _.keys(group2.data);
+    var allDataFields = _.union(group1Data, group2Data);
+    if (allDataFields.length > group1Data.length || group1Data.length !== group2Data.length) {
+        return false;
+    }
+
+    if (group1.name || group2.name) {
+        return false;
+    }
+
+    var equalMappings = true;
+    for (var i = 0; i < group1.mappings.length; ++i) {
+        var mapping1 = Mapping.fromJSON(group1.mappings[i]);
+        if (mapping1.getData() === "deconID") continue;
+
+        var foundEqual = false;
+        for (var j = 0; j < group2.mappings.length; ++j) {
+            var mapping2 = Mapping.fromJSON(group2.mappings[j]);
+            if (mapping1.isEqualTo(mapping2)) {
+                foundEqual = true;
+            }
+        }
+        if (!foundEqual) equalMappings = false;
+
+    }
+    return equalMappings;
+};
+
+var matchDerived = function(decon) {
+    return decon;
+};
+
+var updateDerivedFields = function(markGroups) {
+    var orderingsFound = [];
+
+    for (var i = 0; i < markGroups.length; ++i) {
+        var markGroup = markGroups[i];
+        var deconIDs = markGroup.data['deconID'];
+        delete markGroup.data['deconID'];
+        //markGroup.data['deconID' + i] = deconIDs;
+
+        var attrs = ['xPosition', 'yPosition', 'width', 'height'];
+        var prefix = '_deriv_';
+
+        attrs.forEach(function(attr) {
+            //We drop if all values aren't unique.
+            //if (_.uniq(markGroup.attrs[attr]).length === markGroup.attrs[attr].length) {
+                var ordering = _.map(markGroup.attrs[attr], function(attrVal, j) {
+                    return {val: attrVal, ord: j};
+                });
+            //var ordering = _.orderBy(markGroup.attrs[attr], function(attrVal) { return attrVal; });
+
+                orderingsFound.push({group: markGroup, attr: attr, fieldName: prefix + attr + '_' + i,  ordering: ordering});
+
+                ordering = _.sortBy(ordering, function(orderedVal) {return orderedVal.val;});
+                ordering = _.map(ordering, function(orderedVal) {return orderedVal.ord;});
+                markGroup.data[prefix + attr + '_' + i] = ordering;
+            //}
+        });
+
+    }
+
+    var orderingsByAttr = _.groupBy(orderingsFound, function(ordering) { return ordering.attr; });
+    var attrs = _.keys(orderingsByAttr);
+    attrs.forEach(function(attr) {
+        var orderings = orderingsByAttr[attr];
+        var orderingSets = [];
+
+        for (var i = 0; i < orderings.length; ++i) {
+            var ordering = orderings[i];
+            var orderingSetFound = false;
+            orderingSets.forEach(function(orderingSet) {
+                if (sameOrdering(orderingSet[0].ordering, ordering.ordering)) {
+                    orderingSet.push(ordering);
+                }
+            });
+
+            if (!orderingSetFound) {
+                orderingSets.push([ordering]);
+            }
+        }
+
+        orderingSets.forEach(function(orderingSet) {
+            var fieldName = orderingSet[0].fieldName;
+            orderingSet.forEach(function(ordering) {
+                var orderingData = ordering.group.data[ordering.fieldName];
+                delete ordering.group.data[ordering.fieldName];
+                ordering.group.data[fieldName] = orderingData;
+                ordering.group.data = fixEmptyFields(ordering.group.data);
+            });
+        });
+    });
+
+    return markGroups;
+};
+
+var fixEmptyFields = function(obj) {
+    var keys = _.keys(obj);
+    var newObj = {};
+    keys.forEach(function(key) {
+        if (obj[key] !== undefined) {
+            newObj[key] = obj[key];
+        }
+    });
+    return newObj;
+};
+
+var sameOrdering = function(ordering1, ordering2) {
+    var ordering1Obj = {};
+    ordering1.forEach(function(row) { ordering1Obj[row.ord] = Math.round(row.val); });
+    var ordering2Obj = {};
+    ordering2.forEach(function(row) { ordering2Obj[row.ord] = Math.round(row.val); });
+    return _.isEqual(ordering1Obj, ordering2Obj);
+};
+
+var relateMappingRanges = function(decon) {
+    var attrs = _.keys(decon.groups[0].attrs);
+    var mappingSetsByAttr = {};
+
+    attrs.forEach(function(attr) {
+        var mappingsForAttr = decon.getAllMappingsForAttr(attr);
+        var mappingSets = [];
+        mappingsForAttr.forEach(function(mapping) {
+            var mappingRange;
+            if (mapping.type === "linear") {
+                mappingRange = [mapping.params.attrMin, mapping.params.attrMax];
+            }
+            else if (mapping.type === "nominal") {
+                mappingRange = _.values(mapping.params);
+            }
+            else {
+                return;
+            }
+
+            if (mapping.data[0] === "tick") { return; }
+
+            var mappingRef = {
+                data: mapping.type === "linear" ? mapping.data[0] : mapping.data,
+                attr: mapping.attr,
+                type: mapping.type,
+                range: mappingRange,
+                groupID: _.indexOf(decon.groups, mapping.group)
+            };
+
+            var foundMappingSet = false;
+            mappingSets.forEach(function(mappingSet) {
+                if (belongsToSet(mappingRef, mappingSet)) {
+                    updateMappingSetWithMapping(mappingRef, mappingSet);
+                    foundMappingSet = true;
+                }
+            });
+            if (!foundMappingSet) {
+                mappingSets.push({
+                    mappingRefs: [mappingRef],
+                    attributes: _.clone(mappingRange),
+                    type: mapping.type
+                });
+            }
+        });
+        mappingSetsByAttr[attr] = mappingSets;
+        for (var i = 0; i < mappingSets.length; ++i) {
+            var mappingSet = mappingSets[i];
+
+            if (typeof mappingSet.attributes[0] !== 'number' || mappingSet.attributes.length > 2) continue;
+            //
+            //var maxRangeMappingRef = _.sortBy(mappingSet.mappingRefs, function(mapping) {
+            //    return Math.abs(mapping.range[1] - mapping.range[0]);
+            //});
+            //maxRangeMappingRef = maxRangeMappingRef[0];
+            //
+            //var maxRangeMapping = MarkGroup.fromJSON(decon.groups[maxRangeMappingRef.groupID])
+            //                               .getMapping(maxRangeMappingRef.data, maxRangeMappingRef.attr);
+            //var maxMappingDataRange = [maxRangeMapping.invert(maxRangeMappingRef.range[0]), maxRangeMapping.invert(maxRangeMappingRef.range[1])];
+
+            var minGroupDataVal = _.min(mappingSet.mappingRefs, function(mappingRef) {
+                var group = decon.groups[mappingRef.groupID];
+                return _.min(group.data[mappingRef.data]);
+            });
+            minGroupDataVal = _.min(decon.groups[minGroupDataVal.groupID].data[minGroupDataVal.data]);
+
+            var maxGroupDataVal = _.max(mappingSet.mappingRefs, function(mappingRef) {
+                var group = decon.groups[mappingRef.groupID];
+                return _.max(group.data[mappingRef.data]);
+            });
+            maxGroupDataVal = _.max(decon.groups[maxGroupDataVal.groupID].data[maxGroupDataVal.data]);
+
+            for (var j = 0; j < mappingSet.mappingRefs.length; ++j) {
+                var mappingRef = mappingSet.mappingRefs[j];
+                var mapping = decon.groups[mappingRef.groupID].getMapping(mappingRef.data, mappingRef.attr);
+                //mapping.attrRange = _.clone(mappingSet.attributes);
+                mapping.dataRange = [minGroupDataVal, maxGroupDataVal];
+                mapping.attrRange = [mapping.map(minGroupDataVal), mapping.map(maxGroupDataVal)];
+            }
+        }
+    });
+    decon.mappingSets = mappingSetsByAttr;
+    return decon;
+};
+
+var belongsToSet = function(mappingRef, mappingSet) {
+    if (mappingRef.type === "linear" && mappingSet.type === "linear" && mappingRef.data !== "tick") {
+        return rangeOverlaps(mappingSet.attributes, mappingRef.range);
+    }
+    else if (mappingRef.type === "nominal" && mappingSet.type === "nominal") {
+        return _.intersection(_.values(mappingRef.params), mappingRef.range).length >= 1;
+    }
+    return false;
+};
+
+var rangeOverlaps = function(range1, range2) {
+    var range1Min = _.min(range1) - 2;
+    var range1Max = _.max(range1) + 2;
+    var range2Min = _.min(range2);
+    var range2Max = _.max(range2);
+
+    var noOverlap = (range1Min <= range2Min && range1Max <= range2Min) || (range1Min >= range2Max && range1Max >= range2Max);
+    return !noOverlap;
+};
+
+var updateMappingSetWithMapping = function(mappingRef, mappingSet) {
+    if (mappingRef.type === "linear" && mappingRef.data[0] !== "tick") {
+        if (mappingRef.range[0] < mappingSet.attributes[0]) {
+            mappingSet.attributes[0] = mappingRef.range[0];
+        }
+        if (mappingRef.range[1] > mappingSet.attributes[1]) {
+            mappingSet.attributes[1] = mappingRef.range[1];
+        }
+        mappingSet.mappingRefs.push(mappingRef);
+    }
+    else if (mappingRef.type === "nominal") {
+        mappingSet.attributes = _.union(mappingSet.attributes, _.values(mappingRef.range));
+        mappingSet.mappingRefs.push(mappingRef);
+    }
+};
+
+var isDerived = function(fieldName) {
+    var derivedRegex = /_deriv_*/;
+    return fieldName.match(derivedRegex) || fieldName === 'lineID';
 };
 
 var groupMarks = function(marks) {
@@ -60,10 +343,18 @@ var groupMarks = function(marks) {
     marks.forEach(function(mark) {
         var currSchema = _.keys(mark.data);
 
+        // If there isn't a schema, we won't group it!
+        if (_.isEqual(currSchema, [])) {
+            return;
+        }
+
         var foundSchema = false;
         for (var j = 0; j < dataSchemas.length; ++j) {
+            var sameNodeType = (dataSchemas[j].nodeType === mark.attrs['shape']);
+            var sameAxis = (dataSchemas[j].axis === mark.axis);
+
             if (_.intersection(currSchema, dataSchemas[j].schema).length == currSchema.length
-                && dataSchemas[j].nodeType === mark.attrs['shape']) {
+                && sameNodeType && sameAxis) {
                 foundSchema = true;
                 dataSchemas[j].ids.push(mark.deconID);
                 dataSchemas[j].nodeAttrs.push(mark.nodeAttrs);
@@ -90,8 +381,22 @@ var groupMarks = function(marks) {
                 ids: [mark.deconID],
                 data: {},
                 attrs: {},
-                nodeAttrs: [mark.nodeAttrs]
+                nodeAttrs: [mark.nodeAttrs],
+                isLine: mark.attrs['shape'] === 'linePoint'
             };
+
+            if (mark.axis) {
+                newSchema.axis = mark.axis;
+                if (mark.attrs['shape'] === 'text') {
+                    newSchema.name = mark.axis + '-labels';
+                }
+                else if (mark.attrs['shape'] === 'line') {
+                    newSchema.name = mark.axis + '-ticks';
+                }
+                else if (mark.attrs['shape'] === 'linePoint') {
+                    newSchema.name = mark.axis + '-line';
+                }
+            }
 
             for (var dataAttr in mark.data) {
                 if (mark.data.hasOwnProperty(dataAttr)) {
@@ -111,12 +416,14 @@ var groupMarks = function(marks) {
 };
 
 var expandLines = function(marks) {
-    for (var i = 0; i < marks.length; ++i) {
-        var mark = marks[i];
+    var removed = 0;
+    for (var i = 0; i < marks.length - removed; ++i) {
+        var mark = marks[i - removed];
         var lineData = getLineData(mark);
 
         if (lineData !== undefined) {
-            marks.splice(i, 1);
+            marks.splice(i - removed, 1);
+            removed++;
             var newMarks = getLinePoints(mark, lineData);
             Array.prototype.push.apply(marks, newMarks);
         }
@@ -151,7 +458,7 @@ var getLinePoints = function(mark, lineData) {
     var linePoints = [];
 
     // If we have a basis line we should delete the irrelevant points
-    if (lineData.array.length < mark.node.animatedPathSegList.length) {
+    if (lineData.array.length+2 === mark.node.animatedPathSegList.length) {
         linePointPositions.splice(1, 1);
         linePointPositions.splice(linePointPositions.length-2, 1);
     }
@@ -172,13 +479,15 @@ var getLinePoints = function(mark, lineData) {
         newMarkAttrs['xPosition'] = linePointPositions[j].x;
         newMarkAttrs['yPosition'] = linePointPositions[j].y;
         newMarkAttrs['shape'] = 'linePoint';
+        ptData['area'] = 'yes';
 
         var newMark = {
             data: ptData,
             attrs: newMarkAttrs,
-            nodeAttrs: mark.nodeAttrs,
+            nodeAttrs: _.clone(mark.nodeAttrs),
             lineID: j,
-            deconID: mark.deconID
+            deconID: mark.deconID,
+            axis: mark.axis
         };
         linePoints.push(newMark);
     });
@@ -201,7 +510,9 @@ var getLinePointPositions = function(mark) {
         var transformedPt = transformedPoint(currX, currY, mark.node);
         linePointPositions.push({
             x: transformedPt.x,
-            y: transformedPt.y
+            y: transformedPt.y,
+            pathSegType: seg.pathSegType,
+            pathSegTypeAsLetter: seg.pathSegTypeAsLetter
         });
     }
     return linePointPositions;
@@ -210,7 +521,8 @@ var getLinePointPositions = function(mark) {
 var getLineData = function(mark) {
     var validLineArray = function(mark, dataArray) {
         return mark.node.animatedPathSegList.length === dataArray.length
-            || mark.node.animatedPathSegList.length === dataArray.length+2;
+            || mark.node.animatedPathSegList.length === dataArray.length+2  // spline line?
+            || mark.node.animatedPathSegList.length === dataArray.length*2+1; // area
     };
 
     if (mark.attrs['shape'] === 'path') {
@@ -219,23 +531,23 @@ var getLineData = function(mark) {
         var coercedArray = arrayLikeObject(mark.data);
 
         if (mark.data instanceof Array && validLineArray(mark, mark.data)) {
-            dataArray = mark.data;
+            dataArray = _.clone(mark.data);
         }
         else if (coercedArray && validLineArray(mark, coercedArray)) {
-            dataArray = coercedArray;
+            dataArray = _.clone(coercedArray);
         }
         else if (mark.data instanceof Object) {
             for (var attr in mark.data) {
                 coercedArray = arrayLikeObject(mark.data[attr]);
 
                 if (mark.data[attr] instanceof Array && validLineArray(mark, mark.data[attr])) {
-                    dataArray = mark.data[attr];
+                    dataArray = _.clone(mark.data[attr]);
                 }
                 else if (coercedArray && validLineArray(mark, coercedArray)) {
-                    dataArray = coercedArray;
+                    dataArray = _.clone(coercedArray);
                 }
                 else {
-                    otherData[attr] = mark.data[attr];
+                    otherData[attr] = _.clone(mark.data[attr]);
                 }
             }
         }
@@ -267,7 +579,7 @@ var extractNodeAttrs = function(nodes) {
 
 function extractMappings(schema) {
     var allMappings = extractNominalMappings(schema).concat(extractMultiLinearMappings(schema));
-    return filterExtraNominalMappings(allMappings);
+    return filterExtraMappings(allMappings);
 }
 
 /**
@@ -277,7 +589,7 @@ function extractMappings(schema) {
  */
 function extractNominalMappings (schema) {
     var nominalMappings = [];
-    _.each(schema.schema, function (schemaItem) {
+    _.each(_.keys(schema.data), function (schemaItem) {
         var dataArray = schema.data[schemaItem];
 
         var attrNames = _.keys(schema.attrs);
@@ -348,21 +660,39 @@ function extractNominalMapping (dataName, attrName, dataArray, attrArray) {
     }];
 }
 
-function filterExtraNominalMappings (schemaMappings) {
+function filterExtraMappings (schemaMappings) {
     var attrsWithLinearMapping = [];
+    var attrsWithDerivedMapping = [];
     _.each(schemaMappings, function(schemaMapping) {
         if (schemaMapping.type === "linear") {
             attrsWithLinearMapping.push(schemaMapping.attr);
+        }
+        else if(schemaMapping.type === "derived") {
+            attrsWithDerivedMapping.push(schemaMapping.attr);
         }
     });
     var removed = 0;
     var numMappings = schemaMappings.length;
     for(var ind = 0; ind < numMappings; ++ind) {
-        var schemaMapping = schemaMappings[ind-removed];
+        var schemaMapping = Mapping.fromJSON(schemaMappings[ind-removed]);
         var hasLinear = attrsWithLinearMapping.indexOf(schemaMapping.attr) !== -1;
-        if(schemaMapping.type === 'nominal' && hasLinear) {
+        var hasDerived = attrsWithDerivedMapping.indexOf(schemaMapping.attr) !== -1;
+        if(schemaMapping.type === 'nominal' && (hasLinear || hasDerived)) {
             schemaMappings.splice(ind-removed, 1);
             removed++;
+        }
+        else if(schemaMapping.type === 'derived' && hasLinear) {
+            schemaMappings.splice(ind-removed, 1);
+            removed++;
+        }
+        else if(isDerived(schemaMapping.getData())) {
+            var attr = schemaMapping.getData().match(/_deriv_(.+)_\d*/);
+            attr = attr && attr.length > 1 ? attr[1] : null;
+
+            if (schemaMapping.attr !== attr) {
+                schemaMappings.splice(ind-removed, 1);
+                removed++;
+            }
         }
     }
 
@@ -410,10 +740,8 @@ function extractMultiLinearMappings(schema) {
                 }
 
                 if (err > 0.9999) {
-                    var attrMin = coeffs[0];
-                    _.each(fieldSet, function(field, fieldInd) {
-                        attrMin += _.min(schema.data[field]) * coeffs[fieldInd+1];
-                    });
+                    var attrMin = _.min(schema.attrs[attr]);
+                    var attrMax = _.max(schema.attrs[attr]);
                     var mapping;
                     mapping = {
                         type: 'linear',
@@ -421,10 +749,16 @@ function extractMultiLinearMappings(schema) {
                         attr: attr,
                         params: {
                             attrMin: attrMin,
+                            attrMax: attrMax,
                             coeffs: coeffs.reverse(),
                             err: err
                         }
                     };
+
+                    if (_.filter(fieldSet, function(field) {return isDerived(field);}).length > 0) {
+                        mapping.type = 'derived';
+                    }
+
                     mappings.push(mapping);
                 }
 
@@ -437,6 +771,7 @@ function extractMultiLinearMappings(schema) {
     });
     return allLinearMappings;
 }
+
 
 function findRSquaredError(xMatrix, yVector, coeffs) {
     var squaredError = 0;
@@ -618,6 +953,61 @@ function checkLine(data, attrs, nodeAttrs, node, id) {
         lineLength++;
     }
 
+    var schema = [];
+    var lineData = [];
+    var lineAttrs = [];
+    var lineIDs = [];
+    var lineNodeAttrs = [];
+    var lineCount = 0;
+
+    if (dataArray && dataArray.length === 2*lineLength) {
+        if (dataArray[0] instanceof Object) {
+            schema = schema.concat(_.keys(dataArray[0]));
+        }
+        else {
+            schema = schema.concat(typeof dataArray[0]);
+        }
+        schema = schema.concat(_.keys(otherAttrs));
+
+        for (var k = 0; k < dataArray.length; ++k) {
+            var areaDataRow = {};
+            if (dataArray[0] instanceof Object) {
+                areaDataRow = _.extend(areaDataRow, dataArray[k]);
+            }
+            else {
+                areaDataRow = {dataType: dataArray[k]};
+            }
+            areaDataRow = _.extend(areaDataRow, otherAttrs);
+            areaDataRow['lineID'] = lineCount;
+            lineCount++;
+            lineData[k] = areaDataRow;
+            lineAttrs[k] = attrs;
+            lineAttrs[k].xPosition = linePointPositions[k].x;
+            lineAttrs[k].yPosition = linePointPositions[k].y;
+            lineIDs.push(id);
+            lineNodeAttrs.push(nodeAttrs);
+
+            var svg = node.ownerSVGElement;
+            var transform = node.getTransformToElement(svg);
+            var pt = svg.createSVGPoint();
+            pt.x = segs[k].x;
+            pt.y = segs[k].y;
+            pt = pt.matrixTransform(transform);
+            lineAttrs[k]['xPosition'] = pt.x;
+            lineAttrs[k]['yPosition'] = pt.y;
+        }
+
+        return {
+            schema: schema,
+            ids: lineIDs,
+            data: lineData,
+            attrs: lineAttrs,
+            nodeAttrs: lineNodeAttrs,
+            isLine: true,
+            isArea: true
+        }
+    }
+
     if (dataArray && dataArray.length === lineLength) {
         var schema = [];
         if (dataArray[0] instanceof Object) {
@@ -742,7 +1132,8 @@ function schematize (data, ids, nodeInfo) {
                 ids: [ids[i]],
                 data: {},
                 attrs: {},
-                nodeAttrs: [nodeAttrs[i]]
+                nodeAttrs: [nodeAttrs[i]],
+                isLine: nodeInfo.attrData[i]['shape'] === 'linePoint'
             };
 
             for (var dataAttr in data[i]) {
@@ -762,6 +1153,35 @@ function schematize (data, ids, nodeInfo) {
     return dataSchemas;
 }
 
+var getAxis = function(axisGroupNode) {
+    var axisTickLines = $(axisGroupNode).find('line');
+    var axisTickLabels = $(axisGroupNode).find('text');
+    var subdivide = axisTickLabels.length < axisTickLines.length;
+    var tickCount = axisTickLines.length;
+    var exampleTick = d3.select(axisTickLines[0]);
+    var tickSize = +exampleTick.attr('x2') + (+exampleTick.attr('y2'));
+
+    var axisOrient = +exampleTick.attr("x2") === 0 ? "horizontal" : "vertical";
+    var exampleLabel = d3.select(axisTickLabels[0]);
+    if (axisOrient === "horizontal") {
+        axisOrient = +exampleLabel.attr("y") > 0 ? "bottom" : "top";
+    }
+    else {
+        axisOrient = +exampleLabel.attr("x") > 0 ? "right" : "left";
+    }
+
+    if (axisOrient === "left" || axisOrient === "top") {
+        tickSize = -tickSize;
+    }
+
+    return d3.svg.axis()
+        .scale(axisGroupNode.__chart__)
+        .tickSubdivide(subdivide)
+        .ticks(tickCount)
+        .tickSize(tickSize)
+        .orient(axisOrient);
+};
+
 /**
  * Given a root SVG element, returns all of the mark generating SVG nodes
  * and their order in the DOM traversal ('id').
@@ -772,29 +1192,41 @@ var extractMarkData = function(svgNode) {
     var svgChildren = $(svgNode).find('*');
     var marks = [];
 
-    /** List of tag names which generate marks in SVG and are accepted by our system. **/
-    var markGeneratingTags = ["circle", "ellipse", "rect", "path", "polygon", "text", "line"];
 
     for (var i = 0; i < svgChildren.length; ++i) {
         var node = svgChildren[i];
-        var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
 
-        if (isMarkGenerating) {
-            var mark = {
-                deconID: i,
-                node: node,
-                attrs: extractAttrsFromMark(node),
-                nodeAttrs: extractNodeAttrsFromMark(node)
-            };
+        // Deal with axes, add data if they aren't data-bound.
+        if (node.__chart__ && !node.__axis__) {
+            var axis = getAxis(node);
+            var labels = $(node).find("text");
+            var labelData = {};
+            $.each(labels, function(i, label) {
+                labelData[label.__data__] = label.textContent;
+            });
 
-            // Extract data for marks that have data bound
-            var markData = extractDataFromMark(node);
-            if (markData !== undefined) {
-                mark.data = markData;
-            }
+            d3.select(node).call(axis);
 
-            marks.push(mark);
+            var newLabels = $(node).find("text");
+            $.each(labels, function(i, label) {
+                d3.select(label).text(labelData[label.__data__]);
+            });
         }
+
+        // We've found a data-bound axis.  Now let's separate the axis from the remainder of the deconstruction.
+        if (node.__axis__) {
+            var axisOrientation = (node.__axis__.orient === "left" || node.__axis__.orient === "right") ? "yaxis" : "xaxis";
+            var axisChildren = $(node).find('*');
+            for (var j = 0; j < axisChildren.length; ++j) {
+                var axisChild = axisChildren[j];
+                axisChild.__axisMember__ = true;
+                axisChild.__whichAxis__ = axisOrientation;
+            }
+        }
+
+        var mark = extractMarkDataFromNode(node, i);
+        if (mark)
+            marks.push(mark);
     }
 
     fixTypes(_.map(marks, function(mark) {return mark.data;}));
@@ -802,22 +1234,104 @@ var extractMarkData = function(svgNode) {
     return marks;
 };
 
-var extractDataFromMark = function(node) {
-    var data = node.__data__;
+var extractAxes = function(svgNode) {
+    var svgChildren = $(svgNode).find('*');
+    var axes = [];
 
-    if (data !== undefined) {
-        if (typeof data === "object") {
-            data = $.extend({}, data);
+    for (var i = 0; i < svgChildren.length; ++i) {
+        var node = svgChildren[i];
+
+        // Deal with axes, add data if they aren't data-bound.
+        if (node.__chart__ && !node.__axis__) {
+            var axis = getAxis(node);
+            var labels = $(node).find("text");
+            var labelData = {};
+            $.each(labels, function (i, label) {
+                labelData[label.__data__] = label.textContent;
+            });
+
+            d3.select(node).call(axis);
+
+            var newLabels = $(node).find("text");
+            $.each(labels, function (i, label) {
+                d3.select(label).text(labelData[label.__data__]);
+            });
         }
-        else if (typeof data === "number") {
-            data = {number: data};
+
+        // We've found a data-bound axis.  Now let's separate the axis from the remainder of the deconstruction.
+        if (node.__axis__) {
+            var axisOrientation = (node.__axis__.orient === "left" || node.__axis__.orient === "right") ? "yaxis" : "xaxis";
+            node.__axis__.axis = axisOrientation;
+            node.__axis__.scaleDomain = _.clone(node.__chart__.domain());
+
+            var axisBoundingBox = transformedBoundingBox(node);
+            var localScaleRange = node.__chart__.range();
+            var axisTransform = node.getTransformToElement(node.ownerSVGElement);
+            var axisZero = node.ownerSVGElement.createSVGPoint().matrixTransform(axisTransform);
+            node.__axis__.offset = {
+                x: axisZero.x,
+                y: axisZero.y
+            };
+
+            if (localScaleRange.length > 2) {
+                var axisOffset = axisOrientation === "xaxis" ? axisZero.x : axisZero.y;
+                node.__axis__.scaleRange = _.map(localScaleRange, function(rangeVal) { return rangeVal + axisOffset; });
+            }
+            else if (axisOrientation === "xaxis") {
+                node.__axis__.scaleRange = [localScaleRange[0] + axisZero.x, localScaleRange[1] + axisZero.x];
+            }
+            else if (axisOrientation === "yaxis") {
+                node.__axis__.scaleRange = [localScaleRange[0] + axisZero.y, localScaleRange[1] + axisZero.y];
+            }
+
+            node.__axis__.boundingBox = axisBoundingBox;
+            axes.push(node.__axis__);
         }
-        else {
-            data = {string: data};
+    }
+    return axes;
+};
+
+var extractMarkDataFromNode = function(node, deconID) {
+    /** List of tag names which generate marks in SVG and are accepted by our system. **/
+    var markGeneratingTags = ["circle", "ellipse", "rect", "path", "polygon", "text", "line"];
+    var isMarkGenerating = _.contains(markGeneratingTags, node.tagName.toLowerCase());
+    if (isMarkGenerating) {
+        var mark = {
+            deconID: deconID,
+            node: node,
+            attrs: extractAttrsFromMark(node),
+            nodeAttrs: extractNodeAttrsFromMark(node)
+        };
+
+        if (node.__axisMember__) {
+            mark.axis = node.__whichAxis__;
+        }
+
+        // Extract data for marks that have data bound
+        var data = node.__data__;
+
+        if (data !== undefined) {
+            if (typeof data === "object") {
+                data = $.extend({}, data);
+            }
+            else if (typeof data === "number") {
+                data = {number: data};
+            }
+            else {
+                data = {string: data};
+            }
+        }
+        //
+        //if (node.tagName.toLowerCase() === "text" && data) {
+        //    data.text = $(node).text();
+        //}
+
+        if (data !== undefined) {
+            mark.data = data;
         }
     }
 
-    return data;
+    return mark;
 };
 
 var extractAttrsFromMark = function(mark) {
@@ -831,6 +1345,13 @@ var extractAttrsFromMark = function(mark) {
     attrs.area = boundingBox.width * boundingBox.height;
     attrs.width = boundingBox.width;
     attrs.height = boundingBox.height;
+
+    if (mark.tagName === "text") {
+        attrs.text = $(mark).text();
+    }
+    else {
+        attrs.text = "";
+    }
 
     // TODO: FIXME
     attrs.rotation = 0;
@@ -901,13 +1422,13 @@ function fixTypes (objArray) {
         for (property in object) {
             if (object.hasOwnProperty(property)) {
                 if (object[property] instanceof Date) {
-                    object[property] = object[property].toString();
+                    object[property] = object[property].getTime();
                 }
 
                 rgbChannels = rgbRegex.exec(object[property]);
                 // If this is our first pass, set it to whatever we see
                 if (!fieldType.hasOwnProperty(property)) {
-                    if (!isNaN(+object[property])) {
+                    if (!isNaN(+object[property]) && property !== "text") {
                         // This is a number
                         fieldType[property] = "number";
                     }
@@ -979,6 +1500,7 @@ function extractStyle (domNode) {
         "stroke",
         "fill",
         "font-family",
+        "font-weight",
         "font-size",
         "stroke-width",
         "opacity",
@@ -994,7 +1516,7 @@ function extractStyle (domNode) {
     return filteredStyleObject;
 }
 
-var transformedBoundingBox = function (el, to) {
+function transformedBoundingBox(el, to) {
     var bb = el.getBBox();
     var svg = el.ownerSVGElement;
     if (!to) {
@@ -1029,7 +1551,7 @@ var transformedBoundingBox = function (el, to) {
     bb.y = yMin;
     bb.height = yMax - yMin;
     return bb;
-};
+}
 
 var transformedPoint = function(ptX, ptY, ptBaseElem, ptTargetElem) {
     var svg = ptBaseElem.ownerSVGElement;
@@ -1053,5 +1575,6 @@ module.exports = {
     schematize: schematize,
     extractData: extractMarkData,
     extractVisAttrs: extractVisAttrs,
-    extractStyle: extractStyle
+    extractStyle: extractStyle,
+    isDerived: isDerived
 };
