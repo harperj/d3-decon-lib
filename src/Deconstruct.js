@@ -9,7 +9,11 @@ SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformTo
 
 var Deconstruction = require("./Deconstruction.js");
 var MarkGroup = require("./MarkGroup.js");
-var Mapping = require('./Mapping.js');
+var Mappings = require('./Mapping.js');
+var Mapping = Mappings.Mapping;
+var LinearMapping = Mappings.LinearMapping;
+var NominalMapping = Mappings.NominalMapping;
+var MultiLinearMapping = Mappings.MultiLinearMapping;
 
 var d3;
 if (typeof document !== 'undefined')
@@ -222,20 +226,20 @@ var relateMappingRanges = function(decon) {
         var mappingSets = [];
         mappingsForAttr.forEach(function(mapping) {
             var mappingRange;
-            if (mapping.type === "linear") {
-                mappingRange = [mapping.params.attrMin, mapping.params.attrMax];
+            if (mapping instanceof LinearMapping) {
+                mappingRange = mapping.attrRange;
             }
-            else if (mapping.type === "nominal") {
+            else if (mapping instanceof NominalMapping) {
                 mappingRange = _.values(mapping.params);
             }
             else {
                 return;
             }
 
-            if (mapping.data[0] === "tick") { return; }
+            if (mapping.dataField === "tick") { return; }
 
             var mappingRef = {
-                data: mapping.type === "linear" ? mapping.data[0] : mapping.data,
+                data: mapping.dataField,
                 attr: mapping.attr,
                 type: mapping.type,
                 range: mappingRange,
@@ -262,15 +266,6 @@ var relateMappingRanges = function(decon) {
             var mappingSet = mappingSets[i];
 
             if (typeof mappingSet.attributes[0] !== 'number' || mappingSet.attributes.length > 2) continue;
-            //
-            //var maxRangeMappingRef = _.sortBy(mappingSet.mappingRefs, function(mapping) {
-            //    return Math.abs(mapping.range[1] - mapping.range[0]);
-            //});
-            //maxRangeMappingRef = maxRangeMappingRef[0];
-            //
-            //var maxRangeMapping = MarkGroup.fromJSON(decon.groups[maxRangeMappingRef.groupID])
-            //                               .getMapping(maxRangeMappingRef.data, maxRangeMappingRef.attr);
-            //var maxMappingDataRange = [maxRangeMapping.invert(maxRangeMappingRef.range[0]), maxRangeMapping.invert(maxRangeMappingRef.range[1])];
 
             var minGroupDataVal = _.min(mappingSet.mappingRefs, function(mappingRef) {
                 var group = decon.groups[mappingRef.groupID];
@@ -652,12 +647,13 @@ function extractNominalMapping (dataName, attrName, dataArray, attrArray) {
         mapping[key] = mapping[key][0];
     });
 
-    return [{
-        type: 'nominal',
-        params: mapping,
-        data: dataName,
-        attr: attrName
-    }];
+    return [
+        new NominalMapping(
+            dataName,
+            attrName,
+            mapping
+        )
+    ];
 }
 
 function filterExtraMappings (schemaMappings) {
@@ -674,7 +670,7 @@ function filterExtraMappings (schemaMappings) {
     var removed = 0;
     var numMappings = schemaMappings.length;
     for(var ind = 0; ind < numMappings; ++ind) {
-        var schemaMapping = Mapping.fromJSON(schemaMappings[ind-removed]);
+        var schemaMapping = schemaMappings[ind-removed];
         var hasLinear = attrsWithLinearMapping.indexOf(schemaMapping.attr) !== -1;
         var hasDerived = attrsWithDerivedMapping.indexOf(schemaMapping.attr) !== -1;
         if(schemaMapping.type === 'nominal' && (hasLinear || hasDerived)) {
@@ -685,8 +681,8 @@ function filterExtraMappings (schemaMappings) {
             schemaMappings.splice(ind-removed, 1);
             removed++;
         }
-        else if(isDerived(schemaMapping.getData())) {
-            var attr = schemaMapping.getData().match(/_deriv_(.+)_\d*/);
+        else if(isDerived(schemaMapping.dataField)) {
+            var attr = schemaMapping.dataField.match(/_deriv_(.+)_\d*/);
             attr = attr && attr.length > 1 ? attr[1] : null;
 
             if (schemaMapping.attr !== attr) {
@@ -739,25 +735,32 @@ function extractMultiLinearMappings(schema) {
                     err = findRSquaredError(xMatrix, yVector, coeffs);
                 }
 
-                if (err > 0.9999) {
+                if (err > 0.9999 && fieldSet.length === 1) {  // TODO: handle multi-linear mappings correctly again
                     var attrMin = _.min(schema.attrs[attr]);
                     var attrMax = _.max(schema.attrs[attr]);
-                    var mapping;
-                    mapping = {
-                        type: 'linear',
-                        data: fieldSet.reverse(),
-                        attr: attr,
-                        params: {
-                            attrMin: attrMin,
-                            attrMax: attrMax,
-                            coeffs: coeffs.reverse(),
-                            err: err
-                        }
-                    };
+
+                    var mappingData = schema.data[fieldSet[0]];
+                    var mapping = new LinearMapping(
+                        fieldSet[0],
+                        attr,
+                        coeffs.reverse(),
+                        [_.min(mappingData), _.max(mappingData)],
+                        [attrMin, attrMax]
+                    );
 
                     if (_.filter(fieldSet, function(field) {return isDerived(field);}).length > 0) {
-                        mapping.type = 'derived';
+                        mapping = new DerivedMapping(
+                            fieldSet[0],
+                            attr,
+                            coeffs.reverse(),
+                            [_.min(mappingData), _.max(mappingData)],
+                            [attrMin, attrMax]
+                        );
                     }
+
+                    mapping.mappingError = err;
+                    mapping.attrMin = attrMin;
+                    mapping.attrMax = attrMax;
 
                     mappings.push(mapping);
                 }
@@ -1229,7 +1232,7 @@ var extractMarkData = function(svgNode) {
             marks.push(mark);
     }
 
-    fixTypes(_.map(marks, function(mark) {return mark.data;}));
+    coerceTypes(_.map(marks, function(mark) {return mark.data;}));
 
     return marks;
 };
@@ -1356,7 +1359,7 @@ var extractAttrsFromMark = function(mark) {
     // TODO: FIXME
     attrs.rotation = 0;
 
-    return fixTypes([attrs])[0];
+    return coerceTypes([attrs])[0];
 };
 
 /**
@@ -1385,7 +1388,7 @@ function extractVisAttrs (nodes) {
 
         visAttrData.push(style);
     }
-    visAttrData = fixTypes(visAttrData);
+    visAttrData = coerceTypes(visAttrData);
     return visAttrData;
 }
 
@@ -1406,7 +1409,7 @@ var extractNodeAttrsFromMark = function(markNode) {
  * @param objArray - Array of objects
  * @returns {*} - objArray object with updated data types
  */
-function fixTypes (objArray) {
+function coerceTypes (objArray) {
 
     var fieldType = {};
     var rgbRegex = /^rgb\((\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})\)$/;

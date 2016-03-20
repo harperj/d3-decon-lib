@@ -337,8 +337,7 @@ MarkGroup.prototype.getDataRange = function(data) {
 
 MarkGroup.prototype.getMapping = function(data, attr) {
     for (var i = 0; i < this.mappings.length; ++i) {
-        var thisMappingData = this.mappings[i].type === "linear" ? this.mappings[i].data[0] : this.mappings[i].data;
-        if (thisMappingData === data && this.mappings[i].attr === attr) {
+        if (this.mappings[i].dataField === data && this.mappings[i].attr === attr) {
             return this.mappings[i];
         }
     }
