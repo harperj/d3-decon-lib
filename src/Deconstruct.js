@@ -14,6 +14,7 @@ var Mapping = Mappings.Mapping;
 var LinearMapping = Mappings.LinearMapping;
 var NominalMapping = Mappings.NominalMapping;
 var MultiLinearMapping = Mappings.MultiLinearMapping;
+var DerivedMapping = Mappings.DerivedMapping;
 
 var d3;
 if (typeof document !== 'undefined')
@@ -115,7 +116,7 @@ var shouldCombine = function shouldCombine(group1, group2) {
     var equalMappings = true;
     for (var i = 0; i < group1.mappings.length; ++i) {
         var mapping1 = Mapping.fromJSON(group1.mappings[i]);
-        if (mapping1.getData() === "deconID") continue;
+        if (mapping1.dataField === "deconID") continue;
 
         var foundEqual = false;
         for (var j = 0; j < group2.mappings.length; ++j) {

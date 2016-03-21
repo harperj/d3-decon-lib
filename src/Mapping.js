@@ -1,8 +1,10 @@
 var assert = require('assert');
+var _ = require('underscore');
 
 class Mapping {
     constructor(dataField, attr, params, dataRange, attrRange) {
         this.type = "unknown";
+        this.newStyleMappings = true;
 
         this.dataField = dataField;
         this.attr = attr;
@@ -12,10 +14,20 @@ class Mapping {
     }
 
     static fromJSON(json) {
+        json = _.clone(json);
         if (json.type === "nominal") {
             return NominalMapping.fromJSON(json);
         }
-        else if (json.type === "linear" && json.hasOwnProperty('params') && json.params.coeffs.length === 2) {
+        else if (json.newStyleMappings && json.type === "linear") {
+            return LinearMapping.fromJSON(json);
+        }
+        else if (json.newStyleMappings && json.type === "derived") {
+            return DerivedMapping.fromJSON(json);
+        }
+        else if (json.type === "linear" &&
+            json.hasOwnProperty('params') &&
+            json.params.hasOwnProperty('coeffs') &&
+            json.params.coeffs.length === 2) {
             return LinearMapping(
                 json.data,
                 json.attr,
@@ -24,21 +36,31 @@ class Mapping {
                 json.attrRange
             )
         }
-        else if (json.type === "linear" && json.hasOwnProperty('coeffs')) {
-            return LinearMapping.fromJSON(json);
+        else if (json.type === "derived" &&
+            json.hasOwnProperty('params') &&
+            json.params.hasOwnProperty('coeffs') &&
+            json.params.coeffs.length === 2) {
+            return DerivedMapping(
+                json.data,
+                json.attr,
+                json.params.coeffs,
+                json.dataRange,
+                json.attrRange
+            )
         }
+
+        throw "Failed to match with a mapping type.";
     }
 }
 
 class NominalMapping extends Mapping {
     constructor(dataField, attr, params) {
+        super(dataField, attr, params, _.keys(params), _.values(params));
         this.type = "nominal";
 
         this.dataField = dataField;
         this.attr = attr;
         this.params = params;
-
-        super(dataField, attr, params, params.keys(), params.values());
     }
 
     map(val) {
@@ -68,6 +90,7 @@ class NominalMapping extends Mapping {
     }
 
     static fromJSON(json) {
+        json = _.clone(json);
         return new NominalMapping(
             json.dataField ? json.dataField : json.data,
             json.attr,
@@ -78,8 +101,9 @@ class NominalMapping extends Mapping {
 
 class LinearMapping extends Mapping {
     constructor(dataField, attr, coeffs, dataRange, attrRange) {
+        super(dataField, attr, _.clone(coeffs), dataRange, attrRange);
+        this.coeffs = coeffs;
         this.type = "linear";
-        super(dataField, attr, coeffs, dataRange, attrRange);
     }
 
     isEqualTo(otherMapping) {
@@ -123,10 +147,10 @@ class LinearMapping extends Mapping {
     }
 
     static fromJSON(json) {
+        json = _.clone(json);
         return new LinearMapping(
-            json.data,
+            json.dataField,
             json.attr,
-            json.type,
             json.coeffs,
             json.dataRange,
             json.attrRange
@@ -153,5 +177,6 @@ module.exports = {
     Mapping,
     NominalMapping,
     LinearMapping,
-    MultiLinearMapping
+    MultiLinearMapping,
+    DerivedMapping
 };

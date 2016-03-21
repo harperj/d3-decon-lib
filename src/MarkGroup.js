@@ -1,5 +1,5 @@
 var _ = require('lodash');
-var Mapping = require('./Mapping');
+var Mapping = require('./Mapping').Mapping;
 var Deconstruct = require('./Deconstruct.js');
 var Deconstruction = require('./Deconstruction.js');
 
@@ -25,7 +25,8 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.ids = ids;
 
     this.mappings = _.map(mappings, function(mapping) {
-        return new Mapping(mapping.data, mapping.attr, mapping.type, mapping.params, mapping.dataRange, mapping.attrRange);
+        if (mapping instanceof Mapping) return mapping;
+        else return Mapping.fromJSON(mapping);
     });
     this.nodeAttrs = nodeAttrs;
     this.name = name;
@@ -72,6 +73,9 @@ MarkGroup.prototype.uniqVals = function(fieldName, isAttr) {
 };
 
 MarkGroup.prototype.updateAttrsFromMappings = function() {
+    console.log("ABOUT TO ITERATE OVER SCHEMA");
+    console.log(this);
+
     var schema = this;
     var mappedAttrs = _.map(schema.mappings, function (mapping) {
         return mapping.attr;
@@ -83,18 +87,18 @@ MarkGroup.prototype.updateAttrsFromMappings = function() {
         var attrs = schema.attrs;
 
         if (mapping.type === "nominal") {
-            for (var i = 0; i < data[mapping.data].length; ++i) {
-                attrs[mapping.attr][i] = mapping.params[data[mapping.data][i]];
+            for (var i = 0; i < data[mapping.dataField].length; ++i) {
+                attrs[mapping.attr][i] = mapping.params[data[mapping.dataField][i]];
             }
         }
         else {
-            for (var j = 0; j < data[mapping.data[0]].length; ++j) {
-                var dataVal = data[mapping.data[0]][j];
-                attrs[mapping.attr][j] = dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1];
+            for (var j = 0; j < data[mapping.dataField].length; ++j) {
+                var dataVal = data[mapping.dataField][j];
+                attrs[mapping.attr][j] = dataVal * mapping.coeffs[0] + mapping.coeffs[1];
 
                 if (mapping.attr === "area" && !_.includes(mappedAttrs, 'width') && !_.includes(mappedAttrs, 'height')) {
-                    attrs["width"][j] = Math.sqrt(+dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1]);
-                    attrs["height"][j] = Math.sqrt(+dataVal * mapping.params.coeffs[0] + mapping.params.coeffs[1]);
+                    attrs["width"][j] = Math.sqrt(+dataVal * mapping.coeffs[0] + mapping.coeffs[1]);
+                    attrs["height"][j] = Math.sqrt(+dataVal * mapping.coeffs[0] + mapping.coeffs[1]);
                 }
             }
         }
