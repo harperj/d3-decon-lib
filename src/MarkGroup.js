@@ -8,6 +8,7 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
     this.attrs = attrs;
 
     var columnData = [];
+    console.log(data);
     _.each(data, function(val, key) {
         columnData.push({
             name: key,
@@ -28,7 +29,7 @@ function MarkGroup(data, attrs, nodeAttrs, ids, mappings, name, svg, axis) {
         if (mapping instanceof Mapping) return mapping;
         else return Mapping.fromJSON(mapping);
     });
-    this.nodeAttrs = nodeAttrs;
+    this.nodeAttrs = _.clone(nodeAttrs);
     this.name = name;
     this.svg = svg;
     this.axis = axis;
@@ -73,9 +74,6 @@ MarkGroup.prototype.uniqVals = function(fieldName, isAttr) {
 };
 
 MarkGroup.prototype.updateAttrsFromMappings = function() {
-    console.log("ABOUT TO ITERATE OVER SCHEMA");
-    console.log(this);
-
     var schema = this;
     var mappedAttrs = _.map(schema.mappings, function (mapping) {
         return mapping.attr;
@@ -87,11 +85,20 @@ MarkGroup.prototype.updateAttrsFromMappings = function() {
         var attrs = schema.attrs;
 
         if (mapping.type === "nominal") {
-            for (var i = 0; i < data[mapping.dataField].length; ++i) {
+            //console.log(" ------- DEBUG OUTPUT HERE --------")
+            //console.log(mapping.dataField);
+            //console.log(schema.data[mapping.dataField].length);
+            var dataLen = data[mapping.dataField].length;
+            for (var i = 0; i < dataLen; ++i) {
                 attrs[mapping.attr][i] = mapping.params[data[mapping.dataField][i]];
             }
         }
         else {
+            //console.log(" ------- DEBUG OUTPUT HERE --------")
+            //console.log(mapping);
+            //console.log(mapping.dataField);
+            //console.log(schema.data[mapping.dataField]);
+
             for (var j = 0; j < data[mapping.dataField].length; ++j) {
                 var dataVal = data[mapping.dataField][j];
                 attrs[mapping.attr][j] = dataVal * mapping.coeffs[0] + mapping.coeffs[1];

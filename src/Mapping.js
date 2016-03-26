@@ -1,3 +1,5 @@
+"use strict";
+
 var assert = require('assert');
 var _ = require('underscore');
 
@@ -11,6 +13,10 @@ class Mapping {
         this.params = params;
         this.dataRange = dataRange;
         this.attrRange = attrRange;
+    }
+
+    getData() {
+        return this.dataField;
     }
 
     static fromJSON(json) {
@@ -28,8 +34,8 @@ class Mapping {
             json.hasOwnProperty('params') &&
             json.params.hasOwnProperty('coeffs') &&
             json.params.coeffs.length === 2) {
-            return LinearMapping(
-                json.data,
+            return new LinearMapping(
+                json.data[0],
                 json.attr,
                 json.params.coeffs,
                 json.dataRange,
@@ -40,8 +46,8 @@ class Mapping {
             json.hasOwnProperty('params') &&
             json.params.hasOwnProperty('coeffs') &&
             json.params.coeffs.length === 2) {
-            return DerivedMapping(
-                json.data,
+            return new DerivedMapping(
+                json.data[0],
                 json.attr,
                 json.params.coeffs,
                 json.dataRange,
@@ -49,6 +55,7 @@ class Mapping {
             )
         }
 
+        console.log(json);
         throw "Failed to match with a mapping type.";
     }
 }
@@ -102,8 +109,15 @@ class NominalMapping extends Mapping {
 class LinearMapping extends Mapping {
     constructor(dataField, attr, coeffs, dataRange, attrRange) {
         super(dataField, attr, _.clone(coeffs), dataRange, attrRange);
-        this.coeffs = coeffs;
         this.type = "linear";
+    }
+
+    get coeffs() {
+        return this.params;
+    }
+
+    set coeffs(newCoeffs) {
+        this.params = _.clone(newCoeffs);
     }
 
     isEqualTo(otherMapping) {
@@ -130,12 +144,12 @@ class LinearMapping extends Mapping {
     }
 
     linearRelationshipTo(otherMapping) {
-        assert(otherMapping.type instanceof LinearMapping);
+        assert(otherMapping instanceof LinearMapping);
 
-        var a = this.params.coeffs[0];
-        var b = this.params.coeffs[1];
-        var x = otherMapping.params.coeffs[0];
-        var y = otherMapping.params.coeffs[1];
+        var a = this.coeffs[0];
+        var b = this.coeffs[1];
+        var x = otherMapping.coeffs[0];
+        var y = otherMapping.coeffs[1];
 
         var relCoeff1 = x / a;
         var relCoeff2 = y - ((b * x) / a);

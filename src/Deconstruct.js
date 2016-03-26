@@ -2,11 +2,6 @@ var $ = require('jQuery');
 var _ = require('lodash');
 var sylvester = require('../lib/sylvester-node.js');
 
-/* Polyfill for node.getTransformToElement */
-SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function(elem) {
-    return elem.getScreenCTM().inverse().multiply(this.getScreenCTM());
-};
-
 var Deconstruction = require("./Deconstruction.js");
 var MarkGroup = require("./MarkGroup.js");
 var Mappings = require('./Mapping.js');
@@ -17,10 +12,16 @@ var MultiLinearMapping = Mappings.MultiLinearMapping;
 var DerivedMapping = Mappings.DerivedMapping;
 
 var d3;
-if (typeof document !== 'undefined')
+if (typeof document !== 'undefined') {
+    /* Polyfill for node.getTransformToElement */
+    SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function(elem) {
+        return elem.getScreenCTM().inverse().multiply(this.getScreenCTM());
+    };
     d3 = require('../lib/d3-decon-fixed.min.js');
-else
+}
+else {
     d3 = require('d3');
+}
 
 var pageDeconstruct = function() {
     var svgNodes = $('svg');
